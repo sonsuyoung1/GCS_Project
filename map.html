@@ -1,0 +1,164 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Drone GCS Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        #map {
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* 실종자(타겟) 마커 애니메이션 */
+        .target-siren {
+            font-size: 24px;
+            animation: pulse 1s infinite;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.3);
+                opacity: 0.7;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /*  추적 중인 타겟 강조 효과 */
+        .tracking-highlight {
+            border: 3px solid #ff0000;
+            border-radius: 50%;
+            box-shadow: 0 0 15px #ff0000;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        // 1. 지도 초기화
+        var map = L.map('map').setView([36.6912, 126.5828], 17);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // 2. 전역 변수 설정
+        var droneMarker = L.marker([36.6912, 126.5828]).addTo(map).bindPopup('Drone');
+        var pathPoints = [];
+        var dronePath = L.polyline([], { color: '#00ff00', weight: 3 }).addTo(map);
+
+        var targetMarkers = {}; //  핵심: ID별 타겟 마커 저장소 (Dictionary)
+        var waypointMarkers = [];
+        var missionPoints = [];
+        var missionLine = L.polyline([], { color: '#e67e22', weight: 3, dashArray: '5, 10' }).addTo(map);
+
+        // --- [기능 1: 드론 위치 업데이트] ---
+        function updateLocation(lat, lng) {
+            var newLatLng = new L.LatLng(lat, lng);
+            droneMarker.setLatLng(newLatLng);
+            pathPoints.push(newLatLng);
+            dronePath.setLatLngs(pathPoints);
+        }
+
+        // --- [기능 2: 다중 타겟 관리 (YOLO ID 기반)] ---
+        function updateTargetMarker(id, lat, lng, type, isTracked) {
+            var iconHtml = isTracked ? `<div class="target-siren tracking-highlight">🚨</div>` : `<div class="target-siren">👤</div>`;
+
+            var targetIcon = L.divIcon({
+                html: iconHtml,
+                className: 'custom-target-marker',
+                iconSize: [30, 30],
+                iconAnchor: [15, 15]
+            });
+
+            if (targetMarkers[id]) {
+                // 이미 존재하는 타겟이면 위치와 아이콘(추적상태)만 갱신
+                targetMarkers[id].setLatLng([lat, lng]);
+                targetMarkers[id].setIcon(targetIcon);
+            } else {
+                // 새로운 타겟이면 생성
+                var marker = L.marker([lat, lng], { icon: targetIcon }).addTo(map);
+                marker.bindPopup(`<b>ID: ${id}</b><br>Type: ${type}`);
+                targetMarkers[id] = marker;
+            }
+        }
+
+        // --- [기능 3: 이륙 마커 표시] ---
+        function addTakeoffMarker(lat, lng) {
+            if (window.takeoffMarker) map.removeLayer(window.takeoffMarker);
+            var takeoffIcon = L.divIcon({
+                html: `<div style="background:#27ae60; color:white; border-radius:50%; width:25px; height:25px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white;">H</div>`,
+                className: '', iconSize: [25, 25], iconAnchor: [12, 12]
+            });
+            window.takeoffMarker = L.marker([lat, lng], { icon: takeoffIcon }).addTo(map).bindPopup("Takeoff Point");
+        }
+
+        // --- [기능 4: 웨이포인트 관리] ---
+        map.on('click', function (e) {
+            var lat = e.latlng.lat;
+            var lng = e.latlng.lng;
+            var wpNumber = waypointMarkers.length + 1;
+
+            var wpIcon = L.divIcon({
+                html: `<div style="background:#3498db; color:white; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:11px; border:2px solid white;">${wpNumber}</div>`,
+                iconSize: [20, 20], iconAnchor: [10, 10]
+            });
+
+            var marker = L.marker([lat, lng], { icon: wpIcon }).addTo(map);
+            waypointMarkers.push(marker);
+            missionPoints.push([lat, lng]);
+            missionLine.setLatLngs(missionPoints);
+
+            // C#으로 좌표 전송
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({ tag: 'ADD_WAYPOINT', lat: lat, lng: lng });
+            }
+        });
+
+        function undoLastWaypoint() {
+            if (missionPoints.length > 0) {
+                missionPoints.pop();
+                var lastMarker = waypointMarkers.pop();
+                if (lastMarker) map.removeLayer(lastMarker);
+                missionLine.setLatLngs(missionPoints);
+            }
+        }
+
+        function clearAllWaypoints() {
+            waypointMarkers.forEach(m => map.removeLayer(m));
+            waypointMarkers = [];
+            missionPoints = [];
+            missionLine.setLatLngs([]);
+        }
+
+        // --- [기능 5: 초기화 (착륙 시 등)] ---
+        function clearAllMapElements() {
+            if (window.takeoffMarker) map.removeLayer(window.takeoffMarker);
+            clearAllWaypoints();
+            // 타겟 마커들도 모두 제거
+            Object.values(targetMarkers).forEach(m => map.removeLayer(m));
+            targetMarkers = {};
+            dronePath.setLatLngs([]);
+            pathPoints = [];
+        }
+    </script>
+</body>
+</html>
