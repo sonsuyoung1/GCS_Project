@@ -1,0 +1,147 @@
+﻿using System;
+using System.IO;
+using System.Windows;
+using GCS_Project.Models;
+using GCS_Project.Services;
+using GCS_Project.ViewModels;
+using Microsoft.Web.WebView2.Core;
+
+namespace GCS_Project
+{
+    public partial class MainWindow : Window
+    {
+        #region [1. 필드 (Fields)]
+        private MapController? _mapController;
+        private MainViewModel? _viewModel;
+        #endregion
+
+        #region [2. 생성자 (Constructor)]
+        public MainWindow()
+        {
+            InitializeComponent();
+
+            // DataContext가 바뀔 때 ViewModel 참조 업데이트
+            this.DataContextChanged += (s, e) =>
+            {
+                if (this.DataContext is MainViewModel vm) _viewModel = vm;
+            };
+
+            this.Loaded += MainWindow_Loaded;
+        }
+        #endregion
+
+        #region [3. 초기화 (Initialization)]
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (_viewModel == null) return;
+
+            try
+            {
+                // 1. WebView2 및 MapController 초기화
+                await mapWebView.EnsureCoreWebView2Async(null);
+                _mapController = new MapController(mapWebView);
+
+                // 2. 지도 HTML 로드
+                string mapPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "map.html");
+                if (File.Exists(mapPath))
+                {
+                    mapWebView.Source = new Uri(mapPath);
+                }
+
+                // 3. 뷰모델과 지도를 연결 (브릿지 설정)
+                InitializeMapBridge();
+
+                // 4. 지도에서 보낸 메시지 수신 설정
+                mapWebView.WebMessageReceived += OnWebMessageReceived;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"지도 초기화 실패: {ex.Message}", "오류", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        #endregion
+
+        #region [4. 브릿지: ViewModel -> Map (Event Subscriptions)]
+        /// <summary>
+        /// ViewModel에서 발생하는 신호를 지도(JS)에 반영하도록 연결합니다.
+        /// </summary>
+        private void InitializeMapBridge()
+        {
+            if (_viewModel == null || _mapController == null) return;
+
+            // 1. 드론 실시간 위치 업데이트
+            _viewModel.PositionUpdated += (lat, lng) =>
+            {
+                _ = _mapController.UpdateDroneLocation(lat, lng);
+            };
+
+            // 2. 이륙 지점 마커 설정
+            _viewModel.TakeoffPointSet += (lat, lng) =>
+            {
+                _ = _mapController.AddTakeoffMarker(lat, lng);
+            };
+
+            // 3. 🚨 YOLO 다중 타겟 실시간 업데이트 및 이동
+            // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.
+            _viewModel.MavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
+            {
+                Dispatcher.Invoke(async () =>
+                {
+                    await _mapController.UpdateTargetOnMap(id, lat, lng, type, isTracked);
+                });
+            };
+
+            // 4. 경로(웨이포인트) 관리
+            _viewModel.UndoWaypointRequested += async () =>
+                await _mapController.UndoLastWaypointOnMap();
+
+            _viewModel.ClearWaypointsRequested += async () =>
+            {
+                await _mapController.ClearAllWaypointsOnMap();
+                await mapWebView.ExecuteScriptAsync("clearAllMapElements()");
+            };
+        }
+        #endregion
+
+        #region [5. 이벤트 핸들러 (Event Handlers)]
+        /// <summary>
+        /// 지도(JS)에서 클릭하여 발생한 이벤트를 C# ViewModel로 전달합니다.
+        /// </summary>
+        private void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs args)
+        {
+            if (_viewModel == null) return;
+
+            try
+            {
+                var json = System.Text.Json.JsonDocument.Parse(args.WebMessageAsJson);
+                var root = json.RootElement;
+
+                string tag = root.GetProperty("tag").GetString() ?? "";
+
+                if (tag == "ADD_WAYPOINT")
+                {
+                    double lat = root.GetProperty("lat").GetDouble();
+                    double lng = root.GetProperty("lng").GetDouble();
+                    _viewModel.AddWaypointFromMap(lat, lng);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[JS Bridge Error] {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 채팅 입력창 엔터키 처리
+        /// </summary>
+        private void chatInput_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.Enter && _viewModel != null)
+            {
+                _viewModel.ExecuteSendMessage(chatInput.Text);
+                chatInput.Text = "";
+            }
+        }
+        #endregion
+    }
+}
