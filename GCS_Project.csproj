@@ -9,7 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="LibVLCSharp.WPF" Version="3.9.5" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3650.58" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23" />
   </ItemGroup>
 
   <ItemGroup>
