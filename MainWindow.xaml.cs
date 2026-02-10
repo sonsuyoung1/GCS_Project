@@ -5,6 +5,8 @@ using GCS_Project.Models;
 using GCS_Project.Services;
 using GCS_Project.ViewModels;
 using Microsoft.Web.WebView2.Core;
+using LibVLCSharp.Shared;
+
 
 namespace GCS_Project
 {
@@ -13,6 +15,11 @@ namespace GCS_Project
         #region [1. 필드 (Fields)]
         private MapController? _mapController;
         private MainViewModel? _viewModel;
+        private LibVLC? _libVLC;
+        private MediaPlayer? _mp1;
+        private MediaPlayer? _mp2;
+        private MediaPlayer? _mp3;
+
         #endregion
 
         #region [2. 생성자 (Constructor)]
@@ -20,6 +27,20 @@ namespace GCS_Project
         {
             InitializeComponent();
 
+            // ===== [VIDEO INIT] =====
+            Core.Initialize();
+            _libVLC = new LibVLC("--network-caching=100");
+
+            // 각 VideoView에 플레이어 연결
+            _mp1 = new MediaPlayer(_libVLC);
+            _mp2 = new MediaPlayer(_libVLC);
+            _mp3 = new MediaPlayer(_libVLC);
+
+            VideoView1.MediaPlayer = _mp1;
+            VideoView2.MediaPlayer = _mp2;
+            VideoView3.MediaPlayer = _mp3;
+            
+            // =========================
             // DataContext가 바뀔 때 ViewModel 참조 업데이트
             this.DataContextChanged += (s, e) =>
             {
@@ -53,6 +74,8 @@ namespace GCS_Project
 
                 // 4. 지도에서 보낸 메시지 수신 설정
                 mapWebView.WebMessageReceived += OnWebMessageReceived;
+
+                PlayLocalFile(_mp1, "test.mp4");
             }
             catch (Exception ex)
             {
@@ -143,5 +166,34 @@ namespace GCS_Project
             }
         }
         #endregion
+
+        private void PlayLocalFile(MediaPlayer? mp, string fileName)
+        {
+            if (mp == null || _libVLC == null) return;
+
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, fileName);
+
+            if (!File.Exists(path))
+            {
+                MessageBox.Show($"파일 없음: {path}\n실행 폴더(bin\\...)에 {fileName}이 있어야 함");
+                return;
+            }
+
+            using var media = new Media(_libVLC, new Uri(path));
+            mp.Play(media);
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            try
+            {
+                _mp1?.Stop(); _mp2?.Stop(); _mp3?.Stop();
+                _mp1?.Dispose(); _mp2?.Dispose(); _mp3?.Dispose();
+                _libVLC?.Dispose();
+            }
+            catch { }
+            base.OnClosed(e);
+        }
+
     }
 }
