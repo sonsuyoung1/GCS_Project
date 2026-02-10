@@ -75,7 +75,7 @@ namespace GCS_Project
                 // 4. 지도에서 보낸 메시지 수신 설정
                 mapWebView.WebMessageReceived += OnWebMessageReceived;
 
-                PlayLocalFile(_mp1, "test.mp4");
+                PlayRtpStream(_mp1);
             }
             catch (Exception ex)
             {
@@ -180,6 +180,22 @@ namespace GCS_Project
             }
 
             using var media = new Media(_libVLC, new Uri(path));
+            mp.Play(media);
+        }
+
+        private void PlayRtpStream(MediaPlayer? mp)
+        {
+            if (mp == null || _libVLC == null) return;
+
+            string sdpPath = @"C:\Users\LAAA\Desktop\stream.sdp";
+
+            if (!File.Exists(sdpPath))
+            {
+                MessageBox.Show($"SDP 파일 없음: {sdpPath}");
+                return;
+            }
+
+            var media = new Media(_libVLC, new Uri(sdpPath));
             mp.Play(media);
         }
 
