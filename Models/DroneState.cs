@@ -9,36 +9,31 @@ namespace GCS_Project.Models
 {
     public class DroneState : ObservableObject
     {
-        private double _latitude; // 드론의 상태 값 (위도, 경도, 고도, 속도, 연결 유무)
+        // 1. 필드 선언
+        private double _latitude;
         private double _longitude;
         private double _altitude;
         private double _speed;
         private bool _isConnected;
-        private double? _takeoffLat; // 이륙한 위치의 위도, 경도
+        private double? _takeoffLat;
         private double? _takeoffLng;
+        private int _batteryPercent; // 추가된 배터리 필드
 
-        public double Latitude { get => _latitude; set { _latitude = value; OnPropertyChanged(); } }
-        public double Longitude { get => _longitude; set { _longitude = value; OnPropertyChanged(); } }
-        public double Altitude { get => _altitude; set { _altitude = value; OnPropertyChanged(); } }
-        public double Speed { get => _speed; set { _speed = value; OnPropertyChanged(); } }
-        public bool IsConnected { get => _isConnected; set { _isConnected = value; OnPropertyChanged(); } }
-        public double? TakeoffLat { get => _takeoffLat; set { _takeoffLat = value; OnPropertyChanged(); } }
-        public double? TakeoffLng { get => _takeoffLng; set { _takeoffLng = value; OnPropertyChanged(); } }
-
-        private bool _isTargetDetected; // 객체 탐지 값 (탐지 유무, 타켓 위도, 경도)
+        private bool _isTargetDetected;
         private double _targetLat;
         private double _targetLng;
 
-        public bool IsTargetDetected { get => _isTargetDetected; set { _isTargetDetected = value; OnPropertyChanged(); } }
-        public double TargetLat { get => _targetLat; set { _targetLat = value; OnPropertyChanged(); } }
-        public double TargetLng { get => _targetLng; set { _targetLng = value; OnPropertyChanged(); } }
-
-        
-    }
-    public class TargetModel
-    {
-        public double Lat { get; set; }
-        public double Lng { get; set; }
-        public string FoundTime { get; set; }
+        // 2. 속성 선언 (SetProperty 방식 적용)
+        public double Latitude { get => _latitude; set => SetProperty(ref _latitude, value); }
+        public double Longitude { get => _longitude; set => SetProperty(ref _longitude, value); }
+        public double Altitude { get => _altitude; set => SetProperty(ref _altitude, value); }
+        public double Speed { get => _speed; set => SetProperty(ref _speed, value); }
+        public bool IsConnected { get => _isConnected; set => SetProperty(ref _isConnected, value); }
+        public double? TakeoffLat { get => _takeoffLat; set => SetProperty(ref _takeoffLat, value); }
+        public double? TakeoffLng { get => _takeoffLng; set => SetProperty(ref _takeoffLng, value); }
+        public int BatteryPercent { get => _batteryPercent; set => SetProperty(ref _batteryPercent, value); }
+        public bool IsTargetDetected { get => _isTargetDetected; set => SetProperty(ref _isTargetDetected, value); }
+        public double TargetLat { get => _targetLat; set => SetProperty(ref _targetLat, value); }
+        public double TargetLng { get => _targetLng; set => SetProperty(ref _targetLng, value); }
     }
 }
