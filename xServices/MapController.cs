@@ -56,7 +56,7 @@ namespace GCS_Project.Services
         {
             if (_webView?.CoreWebView2 != null)
             {
-                // 🚨 index.html에 새로 만든 'updateTargetMarker' 함수를 호출합니다.
+                // index.html에 새로 만든 'updateTargetMarker' 함수를 호출합니다.
                 // ID, 위도, 경도, 타입, 추적여부를 모두 전달합니다.
                 string script = $"updateTargetMarker({id}, {lat}, {lng}, '{type}', {isTracked.ToString().ToLower()})";
                 await _webView.ExecuteScriptAsync(script);
