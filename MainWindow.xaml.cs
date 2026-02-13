@@ -25,7 +25,7 @@ namespace GCS_Project
         #region [2. 생성자 (Constructor)]
         public MainWindow()
         {
-            InitializeComponent(); // XAML으로 UI구현한 것을 실제 메모리에 올리고 조립.
+            InitializeComponent();
 
             // ===== [VIDEO INIT] =====
             Core.Initialize();
@@ -44,8 +44,7 @@ namespace GCS_Project
             // DataContext가 바뀔 때 ViewModel 참조 업데이트
             this.DataContextChanged += (s, e) =>
             {
-                if (this.DataContext is MainViewModel vm) // datecontext가 mainviewmodel인지 확인 하고 맞으면 _viewmodel에 저장.
-                    _viewModel = vm;
+                if (this.DataContext is MainViewModel vm) _viewModel = vm;
             };
 
             this.Loaded += MainWindow_Loaded;
@@ -55,8 +54,7 @@ namespace GCS_Project
         #region [3. 초기화 (Initialization)]
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            if (_viewModel == null) 
-                return;
+            if (_viewModel == null) return;
 
             try
             {
@@ -106,7 +104,7 @@ namespace GCS_Project
                 _ = _mapController.AddTakeoffMarker(lat, lng);
             };
 
-            // 3. YOLO 다중 타겟 실시간 업데이트 및 이동
+            // 3. 🚨 YOLO 다중 타겟 실시간 업데이트 및 이동
             // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.
             _viewModel.MavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
             {
@@ -134,8 +132,7 @@ namespace GCS_Project
         /// </summary>
         private void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs args)
         {
-            if (_viewModel == null) 
-                return;
+            if (_viewModel == null) return;
 
             try
             {
@@ -154,6 +151,18 @@ namespace GCS_Project
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[JS Bridge Error] {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 채팅 입력창 엔터키 처리
+        /// </summary>
+        private void chatInput_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.Enter && _viewModel != null)
+            {
+                _viewModel.ExecuteSendMessage(chatInput.Text);
+                chatInput.Text = "";
             }
         }
         #endregion
