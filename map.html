@@ -49,6 +49,13 @@
             border-radius: 50%;
             box-shadow: 0 0 15px #ff0000;
         }
+        /* 드론 아이콘 */
+        .drone-icon {
+            width: 36px;
+            height: 36px;
+            transform-origin: center center;
+            filter: drop-shadow(0 0 6px rgba(255, 60, 60, 0.9));
+        }
     </style>
 </head>
 <body>
@@ -56,12 +63,45 @@
     <script>
         // 1. 지도 초기화
         var map = L.map('map').setView([36.6912, 126.5828], 17);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap'
-        }).addTo(map);
+        const MAPBOX_TOKEN = 'pk.eyJ1Ijoiam9zZzEyMyIsImEiOiJjbWxnNXAxeGMwOGY4M2RzYTR3bGMxd2ttIn0.PZhGAnWNXBMrp8-uCwYH0g';
+
+        L.tileLayer(
+            `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`,
+            {
+                tileSize: 512,
+                zoomOffset: -1,
+                maxZoom: 22,
+                maxNativeZoom: 20,
+                attribution: '© Mapbox © OpenStreetMap'
+            }
+        ).addTo(map);
+
+        // 드론 아이콘 생성 함수 
+        function createDroneIcon(deg) {
+            return L.divIcon({
+                className: '',
+                html: `
+                    <div class="drone-icon" style="transform: rotate(${deg}deg);">
+                        <svg width="36" height="36" viewBox="0 0 24 24">
+                        <path d="M12 2 L19 20 L12 16 L5 20 Z"
+                            fill="#ff3b3b"
+                            stroke="white"
+                            stroke-width="1.2"/>
+                    </svg>
+                </div>
+            `,
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
+            });
+        }
 
         // 2. 전역 변수 설정
-        var droneMarker = L.marker([36.6912, 126.5828]).addTo(map).bindPopup('Drone');
+        let droneHeadingDeg = 0;
+
+        var droneMarker = L.marker(
+            [36.6912, 126.5828],
+            { icon: createDroneIcon(droneHeadingDeg) }
+        ).addTo(map);
         var pathPoints = [];
         var dronePath = L.polyline([], { color: '#00ff00', weight: 3 }).addTo(map);
 
@@ -71,9 +111,15 @@
         var missionLine = L.polyline([], { color: '#e67e22', weight: 3, dashArray: '5, 10' }).addTo(map);
 
         // --- [기능 1: 드론 위치 업데이트] ---
-        function updateLocation(lat, lng) {
-            var newLatLng = new L.LatLng(lat, lng);
+        function updateLocation(lat, lng, headingDeg) {
+            const newLatLng = new L.LatLng(lat, lng);
             droneMarker.setLatLng(newLatLng);
+
+            if (typeof headingDeg === 'number') {
+                droneHeadingDeg = headingDeg;
+                droneMarker.setIcon(createDroneIcon(droneHeadingDeg));
+            }
+
             pathPoints.push(newLatLng);
             dronePath.setLatLngs(pathPoints);
         }
