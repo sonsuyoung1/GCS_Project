@@ -7,6 +7,7 @@ using GCS_Project.ViewModels;
 using Microsoft.Web.WebView2.Core;
 using LibVLCSharp.Shared;
 
+
 namespace GCS_Project
 {
     public partial class MainWindow : Window
@@ -73,6 +74,8 @@ namespace GCS_Project
 
                 // 4. 지도에서 보낸 메시지 수신 설정
                 mapWebView.WebMessageReceived += OnWebMessageReceived;
+
+                PlayRtpStream(_mp1);
             }
             catch (Exception ex)
             {
@@ -199,5 +202,50 @@ namespace GCS_Project
             base.OnClosed(e);
         }
         #endregion
+
+        private void PlayLocalFile(MediaPlayer? mp, string fileName)
+        {
+            if (mp == null || _libVLC == null) return;
+
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, fileName);
+
+            if (!File.Exists(path))
+            {
+                MessageBox.Show($"파일 없음: {path}\n실행 폴더(bin\\...)에 {fileName}이 있어야 함");
+                return;
+            }
+
+            using var media = new Media(_libVLC, new Uri(path));
+            mp.Play(media);
+        }
+
+        private void PlayRtpStream(MediaPlayer? mp)
+        {
+            if (mp == null || _libVLC == null) return;
+
+            string sdpPath = @"C:\Users\LAAA\Desktop\stream.sdp";
+
+            if (!File.Exists(sdpPath))
+            {
+                MessageBox.Show($"SDP 파일 없음: {sdpPath}");
+                return;
+            }
+
+            var media = new Media(_libVLC, new Uri(sdpPath));
+            mp.Play(media);
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            try
+            {
+                _mp1?.Stop(); _mp2?.Stop(); _mp3?.Stop();
+                _mp1?.Dispose(); _mp2?.Dispose(); _mp3?.Dispose();
+                _libVLC?.Dispose();
+            }
+            catch { }
+            base.OnClosed(e);
+        }
+
     }
 }
