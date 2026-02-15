@@ -16,16 +16,15 @@ namespace GCS_Project
         private MapController? _mapController;
         private MainViewModel? _viewModel;
         private LibVLC? _libVLC;
-        private MediaPlayer? _mp1;
-        private MediaPlayer? _mp2;
-        private MediaPlayer? _mp3;
-
+        private LibVLCSharp.Shared.MediaPlayer? _mp1; 
+        private LibVLCSharp.Shared.MediaPlayer? _mp2;
+        private LibVLCSharp.Shared.MediaPlayer? _mp3;
         #endregion
 
         #region [2. 생성자 (Constructor)]
         public MainWindow()
         {
-            InitializeComponent();
+            InitializeComponent(); // XAML으로 UI구현한 것을 실제 메모리에 올리고 조립.
 
             // ===== [VIDEO INIT] =====
             Core.Initialize();
@@ -39,12 +38,12 @@ namespace GCS_Project
             VideoView1.MediaPlayer = _mp1;
             VideoView2.MediaPlayer = _mp2;
             VideoView3.MediaPlayer = _mp3;
-            
-            // =========================
+
             // DataContext가 바뀔 때 ViewModel 참조 업데이트
             this.DataContextChanged += (s, e) =>
             {
-                if (this.DataContext is MainViewModel vm) _viewModel = vm;
+                if (this.DataContext is MainViewModel vm) // datecontext가 mainviewmodel인지 확인 하고 맞으면 _viewmodel에 저장.
+                    _viewModel = vm;
             };
 
             this.Loaded += MainWindow_Loaded;
@@ -54,7 +53,8 @@ namespace GCS_Project
         #region [3. 초기화 (Initialization)]
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            if (_viewModel == null) return;
+            if (_viewModel == null) 
+                return;
 
             try
             {
@@ -104,7 +104,7 @@ namespace GCS_Project
                 _ = _mapController.AddTakeoffMarker(lat, lng);
             };
 
-            // 3. 🚨 YOLO 다중 타겟 실시간 업데이트 및 이동
+            // 3. YOLO 다중 타겟 실시간 업데이트 및 이동
             // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.
             _viewModel.MavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
             {
@@ -132,7 +132,8 @@ namespace GCS_Project
         /// </summary>
         private void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs args)
         {
-            if (_viewModel == null) return;
+            if (_viewModel == null) 
+                return;
 
             try
             {
@@ -153,17 +154,52 @@ namespace GCS_Project
                 System.Diagnostics.Debug.WriteLine($"[JS Bridge Error] {ex.Message}");
             }
         }
-
-        /// <summary>
-        /// 채팅 입력창 엔터키 처리
-        /// </summary>
-        private void chatInput_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        private void PlayLocalFile(MediaPlayer? mp, string fileName)
         {
-            if (e.Key == System.Windows.Input.Key.Enter && _viewModel != null)
+            if (mp == null || _libVLC == null) return;
+
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, fileName);
+
+            if (!File.Exists(path))
             {
-                _viewModel.ExecuteSendMessage(chatInput.Text);
-                chatInput.Text = "";
+                MessageBox.Show($"파일 없음: {path}\n실행 폴더(bin\\...)에 {fileName}이 있어야 함");
+                return;
             }
+
+            using var media = new LibVLCSharp.Shared.Media(_libVLC, new Uri(path));
+            mp.Play(media);
+        }
+
+        private void PlayRtpStream(MediaPlayer? mp)
+        {
+            if (mp == null || _libVLC == null) return;
+
+            string sdpPath = @"C:\Users\LAAA\Desktop\stream.sdp";
+
+            if (!File.Exists(sdpPath))
+            {
+                MessageBox.Show($"SDP 파일 없음: {sdpPath}");
+                return;
+            }
+
+            var media = new Media(_libVLC, new Uri(sdpPath));
+            mp.Play(media);
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            try
+            {
+                _mp1?.Stop(); 
+                _mp2?.Stop(); 
+                _mp3?.Stop();
+                _mp1?.Dispose(); 
+                _mp2?.Dispose();
+                _mp3?.Dispose();
+                _libVLC?.Dispose();
+            }
+            catch { }
+            base.OnClosed(e);
         }
         #endregion
 

@@ -62,18 +62,17 @@
     <div id="map"></div>
     <script>
         var map = L.map('map').setView([36.6912, 126.5828], 17);
-
-       const MAPBOX_TOKEN = 'pk.eyJ1Ijoiam9zZzEyMyIsImEiOiJjbWxnNXAxeGMwOGY4M2RzYTR3bGMxd2ttIn0.PZhGAnWNXBMrp8-uCwYH0g';
+        const MAPBOX_TOKEN = 'pk.eyJ1Ijoiam9zZzEyMyIsImEiOiJjbWxnNXAxeGMwOGY4M2RzYTR3bGMxd2ttIn0.PZhGAnWNXBMrp8-uCwYH0g';
 
         L.tileLayer(
-        `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`,
-        {
-            tileSize: 512,
-            zoomOffset: -1,
-            maxZoom: 22,
-            maxNativeZoom: 20,
-            attribution: '© Mapbox © OpenStreetMap'
-        }
+            `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`,
+            {
+                tileSize: 512,
+                zoomOffset: -1,
+                maxZoom: 22,
+                maxNativeZoom: 20,
+                attribution: '© Mapbox © OpenStreetMap'
+            }
         ).addTo(map);
 
         // 드론 아이콘 생성 함수 
@@ -90,8 +89,8 @@
                     </svg>
                 </div>
             `,
-            iconSize: [36, 36],
-            iconAnchor: [18, 18]
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
             });
         }
 
@@ -102,7 +101,6 @@
             [36.6912, 126.5828],
             { icon: createDroneIcon(droneHeadingDeg) }
         ).addTo(map);
-
         var pathPoints = [];
         var dronePath = L.polyline([], { color: '#00ff00', weight: 3 }).addTo(map);
 
