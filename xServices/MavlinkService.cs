@@ -289,11 +289,12 @@ namespace GCS_Project.Services
         }
 
         // 이륙 명령 보냄
-        public void Takeoff(string altitude)
+        public async Task Takeoff(string altitude)
         {
             if (float.TryParse(altitude, out float altValue))
             {
-                SendMavlinkCommand(22, altValue); // MAV_CMD_NAV_TAKEOFF
+                await SetFlightMode("GUIDED");
+                await SendMavlinkCommand(22, altValue); // MAV_CMD_NAV_TAKEOFF
             }
         }
 
@@ -315,7 +316,7 @@ namespace GCS_Project.Services
         }
 
         // 실시간으로 추적할 드론이 움직이는 좌표를 보내줌
-        public async void SendTrackCoordinate(double lat, double lng, float alt = 5.0f)
+        public async Task SendTrackCoordinate(double lat, double lng, float alt = 5.0f)
         {
             // MAVLink v2 SET_POSITION_TARGET_GLOBAL_INT (#113)
             // 헤더(10) + 페이로드(53) + 체크섬(2) = 총 65바이트
@@ -424,18 +425,19 @@ namespace GCS_Project.Services
             if (_isMissionRunning) 
                 return;
             _isMissionRunning = true;
-
-            // 비행 모드를 GUIDED로 먼저 바꿉니다.
-            SetFlightMode("GUIDED");
+            
 
             // 미션 수행 루프 시작
             Task.Run(async () => {
+
+                await SetFlightMode("GUIDED");
+
                 while (_isMissionRunning && _waypoints.Count > 0)
                 {
                     var targetWP = _waypoints[0]; // 맨 앞의 목표 지점
 
                     // 드론에게 이동 명령 전송
-                    SendTrackCoordinate(targetWP.Lat, targetWP.Lng);
+                    await SendTrackCoordinate(targetWP.Lat, targetWP.Lng);
 
                     // 드론이 목표 지점 근처에 도착했는지 체크하는 로직 (단순 거리 계산)
                     if (IsReached(targetWP))

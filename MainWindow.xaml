@@ -177,7 +177,7 @@
                     <Button Content="Clear All" Command="{Binding ClearWaypointsCommand}" Background="#4A5568" Style="{StaticResource GcsButton}"/>
                     <Button Content="Takeoff" Command="{Binding TakeoffCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="Landing" Command="{Binding LandingCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
-                    <Button Content="RTL" Command="{Binding RtlCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
+                    <Button Content="Return" Command="{Binding RtlCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                 </UniformGrid>
 
                 <Border Grid.Row="2" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,10">

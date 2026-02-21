@@ -91,20 +91,8 @@ namespace GCS_Project.ViewModels
             UndoWaypointCommand = new RelayCommand(ExecuteUndoWaypoint);
             ClearWaypointsCommand = new RelayCommand(ExecuteClearWaypoints);
             FollowCommand = new RelayCommand(ExecuteFollow, () => SelectedTarget != null);
-            RtlCommand = new RelayCommand(async () => await _mavlinkService.SendMavlinkCommand(20, 0f));
-
-            StopTrackingCommand = new RelayCommand(async () =>
-            {
-                // 만약 StopMission이 내부적으로 전송 패킷을 기다려야 하는 Task로 바뀌었다면 await를 붙입니다.
-                // 현재는 단순 플래그 변경이므로 그대로 두셔도 되지만, 흐름상 async를 유지합니다.
-                _mavlinkService.StopMission();
-
-                FlightMode = "TAKEOFF";
-                ChatLog += "\n[시스템] 추적 자율 주행을 중단합니다.";
-
-                // UI 업데이트 알림 (필요 시)
-                NotifyCommandStates();
-            }, () => FlightMode == "TRACKING");
+            RtlCommand = new RelayCommand(ExecuteRtl);
+            StopTrackingCommand = new RelayCommand(ExecuteStopTracking, () => FlightMode == "TRACKING");
 
             _targetLostTimer = new System.Timers.Timer(3000); // 3초 동안 데이터 없으면 소실 판단
             _targetLostTimer.Elapsed += (s, e) => {
@@ -137,7 +125,7 @@ namespace GCS_Project.ViewModels
             // 타겟 업데이트
             _mavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
             {
-                Application.Current.Dispatcher.Invoke(() =>
+                Application.Current.Dispatcher.Invoke(async () =>
                 {
                     // 1. 지도에 마커 표시 (기존 유지)
                     PersonDetectedOnMap?.Invoke(lat, lng);
@@ -152,7 +140,7 @@ namespace GCS_Project.ViewModels
                     if (FlightMode == "TRACKING" && SelectedTarget != null && SelectedTarget.ID == id)
                     {
                         // 드론에게 실시간 좌표 전송!
-                        _mavlinkService.SendTrackCoordinate(lat, lng);
+                        await _mavlinkService.SendTrackCoordinate(lat, lng);
                     }
                 });
             };
@@ -200,45 +188,86 @@ namespace GCS_Project.ViewModels
         #endregion
 
         #region [7. 실행 메서드 (Execute Methods)]
-        private void ExecuteStartMission() { _mavlinkService.StartMission(); FlightMode = "MISSION"; ChatLog += "\n미션을 시작합니다."; }
-        private void ExecuteStopMission() { _mavlinkService.StopMission(); FlightMode = "TAKEOFF"; ChatLog += "\n미션을 중단했습니다."; }
-        private void ExecuteTakeoff() { _mavlinkService.Takeoff("5.0"); FlightMode = "TAKEOFF"; ChatLog += "\n이륙 명령 전송 (목표 고도: 5m)"; }
-        private void ExecuteLanding() { _mavlinkService.Landing(); FlightMode = "LANDING"; _mavlinkService.ClearWaypoints(); ClearWaypointsRequested?.Invoke(); }
-        private void ExecuteUndoWaypoint() { _mavlinkService.UndoWaypoint(); UndoWaypointRequested?.Invoke(); }
-        private void ExecuteClearWaypoints() { _mavlinkService.ClearWaypoints(); ClearWaypointsRequested?.Invoke(); }
-
-        private void ExecuteFollow()
+        // 1. 미션 시작
+        private async void ExecuteStartMission()
         {
-            if (SelectedTarget != null)
-            {
-                if (SelectedTarget != null)
-                {
-                    // 1. 미션 실행 중이었다면 내부적으로 중단
-                    _mavlinkService.StopMission();
-
-                    // 2. 비행 모드를 TRACKING(GCS 내부 상태)으로 변경
-                    FlightMode = "TRACKING";
-
-                    // 3. 드론에게 첫 번째 추적 패킷 전송
-                    _mavlinkService.SendFollowCommand(SelectedTarget.ID);
-
-                    ChatLog += $"\n[시스템] 자율 추적 모드 전환: ID {SelectedTarget.ID}";
-                }
-            }
+            // void 메서드를 Task.Run으로 감싸서 비동기로 대기 가능하게 만듭니다.
+            await Task.Run(() => _mavlinkService.StartMission());
+            FlightMode = "MISSION";
+            ChatLog += "\n미션을 시작합니다.";
         }
 
-        public void StopTracking()
+        // 2. 미션 중단
+        private async void ExecuteStopMission()
         {
-            if (FlightMode == "TRACKING")
-            {
-                FlightMode = "TAKEOFF";
-                ChatLog += "\n[시스템] 추적을 종료하고 대기 모드로 전환합니다.";
-                // 추적 중 마커 표시 해제 등을 위해 서비스에 알림
-                _mavlinkService.SendFollowCommand(-1); // ID -1은 추적 해제를 의미 (약속)
-            }
+            await Task.Run(() => _mavlinkService.StopMission());
+            FlightMode = "TAKEOFF";
+            ChatLog += "\n미션을 중단했습니다.";
         }
 
-        public void AddWaypointFromMap(double lat, double lng) { _mavlinkService.AddWaypoint(lat, lng); ChatLog += $"\n[이동] 새 목적지 설정: {lat:F5}, {lng:F5}"; }
+        // 3. 이륙
+        private async void ExecuteTakeoff()
+        {
+            await Task.Run(() => _mavlinkService.Takeoff("5.0"));
+            FlightMode = "TAKEOFF";
+            ChatLog += "\n이륙 명령 전송 (목표 고도: 5m)";
+        }
+
+        // 4. 착륙 및 웨이포인트 초기화
+        private async void ExecuteLanding()
+        {
+            await Task.Run(() => _mavlinkService.Landing());
+            FlightMode = "LANDING";
+            await Task.Run(() => _mavlinkService.ClearWaypoints());
+            ClearWaypointsRequested?.Invoke();
+        }
+
+        // 5. 웨이포인트 취소 (간단한 작업은 동기 유지 가능하지만, 통일성을 위해 Task.Run 권장)
+        private async void ExecuteUndoWaypoint()
+        {
+            await Task.Run(() => _mavlinkService.UndoWaypoint());
+            UndoWaypointRequested?.Invoke();
+        }
+
+        // 6. 모든 웨이포인트 삭제
+        private async void ExecuteClearWaypoints()
+        {
+            await Task.Run(() => _mavlinkService.ClearWaypoints());
+            ClearWaypointsRequested?.Invoke();
+        }
+
+        private async void ExecuteFollow()
+        {
+            if (SelectedTarget == null) return;
+            await Task.Run(() => {
+                _mavlinkService.StopMission();
+                _mavlinkService.SendFollowCommand(SelectedTarget.ID);
+            });
+            FlightMode = "TRACKING";
+            ChatLog += $"\n[시스템] 타겟 추적 모드: ID {SelectedTarget.ID}";
+        }
+
+        private async void ExecuteRtl()
+        {
+            await Task.Run(() => _mavlinkService.SendMavlinkCommand(20, 0f));
+            ChatLog += "\n[명령] 복귀(RTL) 명령 전송.";
+        }
+
+        private async void ExecuteStopTracking()
+        {
+            await Task.Run(() => {
+                _mavlinkService.StopMission();
+                _mavlinkService.SendFollowCommand(-1);
+            });
+            FlightMode = "TAKEOFF";
+            ChatLog += "\n[시스템] 추적 자율 주행 중단.";
+        }
+
+        public async void AddWaypointFromMap(double lat, double lng)
+        {
+            await Task.Run(() => _mavlinkService.AddWaypoint(lat, lng));
+            ChatLog += $"\n[지도] 목적지 추가: {lat:F5}, {lng:F5}";
+        }
         #endregion
 
         private void NotifyCommandStates()
