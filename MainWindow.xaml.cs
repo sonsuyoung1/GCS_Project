@@ -53,26 +53,22 @@ namespace GCS_Project
         #region [3. 초기화 (Initialization)]
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            if (_viewModel == null) 
-                return;
+            _viewModel ??= this.DataContext as MainViewModel;
 
+            if (_viewModel == null)
+            {
+                MessageBox.Show("ViewModel(DataContext) 연결이 안 됨");
+                return;
+            }
             try
             {
-                // 1. WebView2 및 MapController 초기화
                 await mapWebView.EnsureCoreWebView2Async(null);
                 _mapController = new MapController(mapWebView);
 
-                // 2. 지도 HTML 로드
                 string mapPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "map.html");
-                if (File.Exists(mapPath))
-                {
-                    mapWebView.Source = new Uri(mapPath);
-                }
+                if (File.Exists(mapPath)) mapWebView.Source = new Uri(mapPath);
 
-                // 3. 뷰모델과 지도를 연결 (브릿지 설정)
                 InitializeMapBridge();
-
-                // 4. 지도에서 보낸 메시지 수신 설정
                 mapWebView.WebMessageReceived += OnWebMessageReceived;
 
                 PlayRtpStream(_mp1);
@@ -81,6 +77,19 @@ namespace GCS_Project
             {
                 MessageBox.Show($"지도 초기화 실패: {ex.Message}", "오류", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+
+            _viewModel.ChatLog += "\n[UI] MainWindow_Loaded OK";
+            _viewModel.ChatLog += "\n[UI] Before StartAsync";
+            // ✅ (추가) MAV 서비스 로그 -> SYSTEM LOG(ChatLog)로 연결
+            _viewModel.MavlinkService.OnLogReceived += (msg) =>
+            {
+                Dispatcher.Invoke(() => _viewModel.ChatLog += $"\n{msg}");
+            };
+            // ✅ 여기서 무조건 호출 (로그가 반드시 UI에 찍힘)
+            await _viewModel.MavlinkService.StartAsync("0.0.0.0", 14550);
+
+            _viewModel.ChatLog += "\n[UI] After StartAsync";
+            
         }
         #endregion
 
@@ -106,13 +115,13 @@ namespace GCS_Project
 
             // 3. YOLO 다중 타겟 실시간 업데이트 및 이동
             // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.
-            _viewModel.MavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
+            /*_viewModel.MavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
             {
                 Dispatcher.Invoke(async () =>
                 {
                     await _mapController.UpdateTargetOnMap(id, lat, lng, type, isTracked);
                 });
-            };
+            };*/
 
             // 4. 경로(웨이포인트) 관리
             _viewModel.UndoWaypointRequested += async () =>
