@@ -31,9 +31,9 @@ namespace GCS_Project
             _libVLC = new LibVLC("--network-caching=100");
 
             // 각 VideoView에 플레이어 연결
-            _mp1 = new MediaPlayer(_libVLC);
-            _mp2 = new MediaPlayer(_libVLC);
-            _mp3 = new MediaPlayer(_libVLC);
+            _mp1 = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
+            _mp2 = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
+            _mp3 = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
 
             VideoView1.MediaPlayer = _mp1;
             VideoView2.MediaPlayer = _mp2;
@@ -75,7 +75,8 @@ namespace GCS_Project
                 // 4. 지도에서 보낸 메시지 수신 설정
                 mapWebView.WebMessageReceived += OnWebMessageReceived;
 
-                PlayRtpStream(_mp1);
+
+                // PlayRtpStream(_mp1);
             }
             catch (Exception ex)
             {
@@ -130,7 +131,7 @@ namespace GCS_Project
         /// <summary>
         /// 지도(JS)에서 클릭하여 발생한 이벤트를 C# ViewModel로 전달합니다.
         /// </summary>
-        private void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs args)
+        private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
         {
             if (_viewModel == null) 
                 return;
@@ -154,6 +155,7 @@ namespace GCS_Project
                 System.Diagnostics.Debug.WriteLine($"[JS Bridge Error] {ex.Message}");
             }
         }
+
         private void PlayLocalFile(MediaPlayer? mp, string fileName)
         {
             if (mp == null || _libVLC == null) return;
@@ -202,50 +204,5 @@ namespace GCS_Project
             base.OnClosed(e);
         }
         #endregion
-
-        private void PlayLocalFile(MediaPlayer? mp, string fileName)
-        {
-            if (mp == null || _libVLC == null) return;
-
-            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, fileName);
-
-            if (!File.Exists(path))
-            {
-                MessageBox.Show($"파일 없음: {path}\n실행 폴더(bin\\...)에 {fileName}이 있어야 함");
-                return;
-            }
-
-            using var media = new Media(_libVLC, new Uri(path));
-            mp.Play(media);
-        }
-
-        private void PlayRtpStream(MediaPlayer? mp)
-        {
-            if (mp == null || _libVLC == null) return;
-
-            string sdpPath = @"C:\Users\LAAA\Desktop\stream.sdp";
-
-            if (!File.Exists(sdpPath))
-            {
-                MessageBox.Show($"SDP 파일 없음: {sdpPath}");
-                return;
-            }
-
-            var media = new Media(_libVLC, new Uri(sdpPath));
-            mp.Play(media);
-        }
-
-        protected override void OnClosed(EventArgs e)
-        {
-            try
-            {
-                _mp1?.Stop(); _mp2?.Stop(); _mp3?.Stop();
-                _mp1?.Dispose(); _mp2?.Dispose(); _mp3?.Dispose();
-                _libVLC?.Dispose();
-            }
-            catch { }
-            base.OnClosed(e);
-        }
-
     }
 }
