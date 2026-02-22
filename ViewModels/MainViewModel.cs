@@ -16,12 +16,18 @@ namespace GCS_Project.ViewModels
         private string _flightMode = "IDLE";
         private string _chatLog = "드론 연결 대기 중...";
         private int _currentWaypointCount = 0;
+        private double _latitude;
+        private double _longitude;
+        private double _altitude;
+        private double _speed;
+        private int _batteryPercentVm;
+        private bool _isConnected;
+        private bool _mavStarting;
         #endregion
 
         #region [2. 속성 (Properties)]
         public MavlinkService MavlinkService => _mavlinkService;
         public DroneState Drone => _mavlinkService.CurrentState;
-        public int BatteryPercent => Drone.BatteryPercent;
 
         // MavlinkService의 리스트를 직접 참조하도록 변경하여 메모리 중복 방지
         public ObservableCollection<DetectedTarget> DetectedTargets => _mavlinkService.DetectedTargets;
@@ -56,6 +62,42 @@ namespace GCS_Project.ViewModels
         public bool IsClearEnabled => (FlightMode == "IDLE" || FlightMode == "TAKEOFF") && _currentWaypointCount > 0 && FlightMode != "MISSION";
         public bool IsFollowEnabled => SelectedTarget != null && FlightMode != "LANDING" && FlightMode != "TRACKING";
         public bool IsStopEnabled => FlightMode == "MISSION" || FlightMode == "TRACKING";
+
+        public double Latitude
+        {
+            get => _latitude;
+            set => SetProperty(ref _latitude, value);
+        }
+
+        public double Longitude
+        {
+            get => _longitude;
+            set => SetProperty(ref _longitude, value);
+        }
+
+        public double Altitude
+        {
+            get => _altitude;
+            set => SetProperty(ref _altitude, value);
+        }
+
+        public double Speed
+        {
+            get => _speed;
+            set => SetProperty(ref _speed, value);
+        }
+
+        public int BatteryPercentVm
+        {
+            get => _batteryPercentVm;
+            set => SetProperty(ref _batteryPercentVm, value);
+        }
+
+        public bool IsConnected
+        {
+            get => _isConnected;
+            set => SetProperty(ref _isConnected, value);
+        }
         #endregion
 
         #region [3. 커맨드 (Commands)]
@@ -120,6 +162,8 @@ namespace GCS_Project.ViewModels
                 }
                 _targetLostTimer.Stop();
             };
+            InitializeService();
+            _ = StartMavlinkAsync();
         }
         #endregion
 
@@ -173,18 +217,24 @@ namespace GCS_Project.ViewModels
                 {
                     ChatLog += $"\n{message}";
                 });
+
             };
         }
 
         private void HandleDroneData(DroneState state)
         {
+            // VM 표시값 갱신 (이게 UI를 살림)
+            Latitude = state.Latitude;
+            Longitude = state.Longitude;
+            Altitude = state.Altitude;
+            Speed = state.Speed;
+            BatteryPercentVm = state.BatteryPercent;
+            IsConnected = state.IsConnected;
+            //ChatLog += $"\n[UI] lat={Latitude:F5} lon={Longitude:F5} alt={Altitude:F1} spd={Speed:F2} bat={BatteryPercentVm}% link={IsConnected}";
             if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue)
                 TakeoffPointSet?.Invoke(state.TakeoffLat.Value, state.TakeoffLng.Value);
 
             PositionUpdated?.Invoke(state.Latitude, state.Longitude);
-
-            OnPropertyChanged(nameof(BatteryPercent));
-            OnPropertyChanged("Drone");
 
             if (FlightMode == "LANDING" && state.Altitude <= 0.1)
             {
@@ -242,6 +292,26 @@ namespace GCS_Project.ViewModels
             OnPropertyChanged(nameof(IsUndoEnabled));
             OnPropertyChanged(nameof(IsClearEnabled));
             OnPropertyChanged(nameof(IsFollowEnabled));
+        }
+        private async Task StartMavlinkAsync()
+        {
+            if (_mavStarting) return;
+            _mavStarting = true;
+
+            ChatLog += "\n[VM] StartMavlinkAsync begin";
+            try
+            {
+                await _mavlinkService.StartAsync("0.0.0.0", 14550);
+                ChatLog += "\n[VM] MAVLink connected";
+            }
+            catch (Exception ex)
+            {
+                ChatLog += $"\n[VM][ERROR] MAV start failed: {ex.Message}";
+            }
+            finally
+            {
+                _mavStarting = false;
+            }
         }
     }
 }

@@ -79,17 +79,6 @@ namespace GCS_Project
             }
 
             _viewModel.ChatLog += "\n[UI] MainWindow_Loaded OK";
-            _viewModel.ChatLog += "\n[UI] Before StartAsync";
-            // ✅ (추가) MAV 서비스 로그 -> SYSTEM LOG(ChatLog)로 연결
-            _viewModel.MavlinkService.OnLogReceived += (msg) =>
-            {
-                Dispatcher.Invoke(() => _viewModel.ChatLog += $"\n{msg}");
-            };
-            // ✅ 여기서 무조건 호출 (로그가 반드시 UI에 찍힘)
-            await _viewModel.MavlinkService.StartAsync("0.0.0.0", 14550);
-
-            _viewModel.ChatLog += "\n[UI] After StartAsync";
-            
         }
         #endregion
 

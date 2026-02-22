@@ -118,11 +118,11 @@
                     </StackPanel>
                     <StackPanel Style="{StaticResource StatusGroup}">
                         <TextBlock Text="BAT " Foreground="#94A3B8"/>
-                        <TextBlock Text="{Binding BatteryPercent, StringFormat={}{0}%}" Foreground="#FACC15"/>
+                        <TextBlock Text="{Binding BatteryPercentVm, StringFormat={}{0}%}" Foreground="#FACC15"/>
                     </StackPanel>
                     <StackPanel Style="{StaticResource StatusGroup}">
                         <TextBlock Text="LINK " Foreground="#94A3B8"/>
-                        <TextBlock Text="{Binding Drone.IsConnected}" Foreground="#22C55E"/>
+                        <TextBlock Text="{Binding IsConnected}" Foreground="#22C55E"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -136,19 +136,19 @@
                 <UniformGrid Columns="5" Margin="10,0">
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="LATITUDE" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Latitude, StringFormat={}{0:F5}}" Style="{StaticResource ValueText}"/>
+                        <TextBlock Text="{Binding Latitude, StringFormat={}{0:F5}}" Style="{StaticResource ValueText}"/>
                     </StackPanel>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="LONGITUDE" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Longitude, StringFormat={}{0:F5}}" Style="{StaticResource ValueText}"/>
+                        <TextBlock Text="{Binding Longitude, StringFormat={}{0:F5}}" Style="{StaticResource ValueText}"/>
                     </StackPanel>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="ALTITUDE" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Altitude, StringFormat={}{0:F1}m}" Style="{StaticResource ValueText}" Foreground="#2ECC71"/>
+                        <TextBlock Text="{Binding Altitude, StringFormat={}{0:F1}m}" Style="{StaticResource ValueText}" Foreground="#2ECC71"/>
                     </StackPanel>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="SPEED" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Speed}" Style="{StaticResource ValueText}" Foreground="#3498DB"/>
+                        <TextBlock Text="{Binding Speed, StringFormat={}{0:F2}}" Style="{StaticResource ValueText}" Foreground="#3498DB"/>
                     </StackPanel>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="STATUS" Style="{StaticResource LabelText}"/>

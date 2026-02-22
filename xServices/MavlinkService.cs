@@ -54,9 +54,13 @@ namespace GCS_Project.xServices
             _router = _protocol.CreateRouter("GCS_ROUTER");
             OnLogReceived?.Invoke("[MAV] Router created");
 
+            // 1) PX4 → GCS (수신)
             AddUdpListenPort(_router, listenHost, listenPort);
-            OnLogReceived?.Invoke("[MAV] UDP port added");
             OnLogReceived?.Invoke($"[MAV] UDP listen {listenHost}:{listenPort}");
+
+            // 2) GCS → PX4 (송신)  ★ 이 줄 추가
+            AddUdpOutPort(_router, "192.168.0.6", 14551);
+            OnLogReceived?.Invoke("[MAV] UDP out 192.168.0.6:18570 added");
 
             var seq = new PacketSequenceCalculator();
             var identity = new MavlinkIdentity(255, 255);
@@ -104,7 +108,6 @@ namespace GCS_Project.xServices
             OnLogReceived?.Invoke("[MAV] Connected");
         }
 
-        // 여기만 형님 환경에 맞게 “메서드 이름”을 정확히 골라 꽂으면 됨
         private static void AddUdpListenPort(IProtocolRouter router, string host, int port)
         {
             router.AddUdpPort(p =>
@@ -120,22 +123,125 @@ namespace GCS_Project.xServices
 
             });
         }
+        private static void AddUdpOutPort(IProtocolRouter router, string host, int port)
+        {
+            router.AddUdpPort(p =>
+            {
+                p.Scheme = "udp";
+                p.Host = host;     // 우분투 IP
+                p.Port = port;     // PX4가 듣는 포트 (18570)
+                p.IsEnabled = true;
+                p.Name = "udp_out";
+            });
+        }
+
+
 
         private void HookTelemetry(IClientDevice drone)
         {
-            // Heartbeat 예시 (형님 패키지에 IHeartbeatClient가 있으면 이게 제일 깔끔)
+            OnLogReceived?.Invoke("[MAV] HookTelemetry entered");
+
+            // 1) Heartbeat
             var hb = drone.GetMicroservice<IHeartbeatClient>();
             if (hb != null)
             {
-                _subs.Add(hb.RawHeartbeat.Subscribe(_ =>
+                _subs.Add(hb.RawHeartbeat.Subscribe(h =>
                 {
                     CurrentState.IsConnected = true;
                     OnDataUpdated?.Invoke(CurrentState);
                 }));
+                OnLogReceived?.Invoke("[MAV] Heartbeat hooked");
+            }
+            else
+            {
+                OnLogReceived?.Invoke("[MAV] IHeartbeatClient NOT found");
             }
 
-            // TODO: GlobalPositionInt / VfrHud / SysStatus는
-            // 형님 프로젝트에서 GetMicroservice<...> 자동완성으로 실제 타입 이름 확인해서 붙이면 됨
+            // 2) PositionClient (여기서 위치/고도/속도까지)
+            var pos = drone.GetMicroservice<IPositionClient>();
+            if (pos == null)
+            {
+                OnLogReceived?.Invoke("[MAV] IPositionClient NOT found");
+                return;
+            }
+            OnLogReceived?.Invoke("[MAV] IPositionClient found");
+
+            // 2-1) GlobalPosition 구독
+            try
+            {
+                _subs.Add(pos.GlobalPosition.Subscribe(gp =>
+                {
+                    
+                    // ✅ 1e7 스케일 → degree 변환, Akt -> meter 로 변환
+                    var latDeg = gp.Lat / 1e7;
+                    var lonDeg = gp.Lon / 1e7;
+                    var AltMeter = gp.Alt / 1000.0;
+                    CurrentState.Latitude = latDeg;
+                    CurrentState.Longitude = lonDeg;
+                    CurrentState.Altitude = AltMeter;
+                    OnDataUpdated?.Invoke(CurrentState);
+                }));
+
+                OnLogReceived?.Invoke("[MAV] GlobalPosition hooked");
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[MAV] GlobalPosition subscribe failed: {ex.Message}");
+            }
+
+            // 2-2) VfrHud 구독 (속도)
+            try
+            {
+                _subs.Add(pos.VfrHud.Subscribe(vfr =>
+                {
+                    CurrentState.Speed = Math.Round(vfr.Groundspeed, 2);
+                    OnDataUpdated?.Invoke(CurrentState);
+                }));
+
+                OnLogReceived?.Invoke("[MAV] VfrHud hooked");
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[MAV] VfrHud subscribe failed: {ex.Message}");
+            }
+            // 3) TelemetryClient (배터리/상태)
+            var tel = drone.GetMicroservice<ITelemetryClient>();
+            if (tel == null)
+            {
+                OnLogReceived?.Invoke("[MAV] ITelemetryClient NOT found");
+                return;
+            }
+            OnLogReceived?.Invoke("[MAV] ITelemetryClient found");
+
+            // 3-1) Battery
+            try
+            {
+                _subs.Add(tel.Battery.Subscribe(b =>
+                {
+                    CurrentState.BatteryPercent = b.BatteryRemaining; 
+                    OnDataUpdated?.Invoke(CurrentState);
+                }));
+                OnLogReceived?.Invoke("[MAV] Battery hooked");
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[MAV] Battery subscribe failed: {ex.Message}");
+            }
+
+            // 3-2) SystemStatus (선택: 로그용)
+            /*try
+            {
+                _subs.Add(tel.SystemStatus.Subscribe(s =>
+                {
+                    // 일단 들어오는지 확인용 로그
+                    OnLogReceived?.Invoke("[MAV] SystemStatus tick");
+                }));
+                OnLogReceived?.Invoke("[MAV] SystemStatus hooked");
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[MAV] SystemStatus subscribe failed: {ex.Message}");
+            }*/
         }
 
         public async Task StopAsync()
