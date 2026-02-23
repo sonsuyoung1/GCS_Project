@@ -175,6 +175,8 @@
                     <Button Content="Stop" Command="{Binding StopMissionCommand}" Background="#E74C3C" Style="{StaticResource GcsButton}"/>
                     <Button Content="Undo" Command="{Binding UndoWaypointCommand}" Background="#4A5568" Style="{StaticResource GcsButton}"/>
                     <Button Content="Clear All" Command="{Binding ClearWaypointsCommand}" Background="#4A5568" Style="{StaticResource GcsButton}"/>
+                    <Button Content="ARM" Command="{Binding ArmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
+                    <Button Content="DISARM" Command="{Binding DisarmCommand}" Background="#E74C3C" Style="{StaticResource GcsButton}"/>
                     <Button Content="Takeoff" Command="{Binding TakeoffCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="Landing" Command="{Binding LandingCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="RTL" Command="{Binding RtlCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>

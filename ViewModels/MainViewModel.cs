@@ -23,6 +23,7 @@ namespace GCS_Project.ViewModels
         private int _batteryPercentVm;
         private bool _isConnected;
         private bool _mavStarting;
+        private string _isArmed = "UNKNOWN";
         #endregion
 
         #region [2. 속성 (Properties)]
@@ -98,6 +99,12 @@ namespace GCS_Project.ViewModels
             get => _isConnected;
             set => SetProperty(ref _isConnected, value);
         }
+
+        public string IsArmed
+        {
+            get => _isArmed;
+            set => SetProperty(ref _isArmed, value);
+        }
         #endregion
 
         #region [3. 커맨드 (Commands)]
@@ -110,6 +117,8 @@ namespace GCS_Project.ViewModels
         public ICommand FollowCommand { get; }
         public ICommand StopTrackingCommand { get; }
         public ICommand RtlCommand { get; }
+        public ICommand ArmCommand { get; }
+        public ICommand DisarmCommand { get; }
         #endregion
 
         #region [4. 이벤트 (View 통신용)]
@@ -137,6 +146,8 @@ namespace GCS_Project.ViewModels
             {
                 ChatLog += "\n[TODO] RTL 명령은 v4 송신 붙인 뒤 구현";
             });
+            ArmCommand = new RelayCommand(ExecuteArm, () => IsConnected);
+            DisarmCommand = new RelayCommand(ExecuteDisarm, () => IsConnected);
 
             StopTrackingCommand = new RelayCommand(async () =>
             {
@@ -230,7 +241,10 @@ namespace GCS_Project.ViewModels
             Speed = state.Speed;
             BatteryPercentVm = state.BatteryPercent;
             IsConnected = state.IsConnected;
-            //ChatLog += $"\n[UI] lat={Latitude:F5} lon={Longitude:F5} alt={Altitude:F1} spd={Speed:F2} bat={BatteryPercentVm}% link={IsConnected}";
+
+            (ArmCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (DisarmCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            
             if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue)
                 TakeoffPointSet?.Invoke(state.TakeoffLat.Value, state.TakeoffLng.Value);
 
@@ -270,6 +284,23 @@ namespace GCS_Project.ViewModels
                     ChatLog += $"\n[시스템] 자율 추적 모드 전환: ID {SelectedTarget.ID}";
                 }
             }
+        }
+
+        private void ExecuteArm()
+        {
+            ChatLog += "\n[VM] ARM 버튼 클릭";
+            _ = _mavlinkService.SendArmAsync();
+
+            // 지금 단계에서는 armed 상태를 텔레메트리로 정확히 가져오는 게 아니라
+            // 버튼 클릭 결과 표시만 임시로 함
+            IsArmed = "ARMING...";
+        }
+
+        private void ExecuteDisarm()
+        {
+            ChatLog += "\n[VM] DISARM 버튼 클릭";
+            _ = _mavlinkService.SendDisarmAsync();
+            IsArmed = "DISARMING...";
         }
 
         public void StopTracking()

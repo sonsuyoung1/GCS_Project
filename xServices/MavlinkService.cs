@@ -2,6 +2,7 @@
 using Asv.IO;
 using Asv.Mavlink;
 using Asv.Mavlink.Common;
+using Asv.Mavlink.Minimal;
 using GCS_Project.Models;
 using ObservableCollections;
 using R3;
@@ -20,6 +21,8 @@ namespace GCS_Project.xServices
 
         private CancellationTokenSource? _cts;
 
+        private bool _txProbeDumped = false; // 나중에 지워라
+
         // v4 core
         private IProtocolFactory? _protocol;
         private IProtocolRouter? _router;
@@ -27,6 +30,9 @@ namespace GCS_Project.xServices
         private IClientDevice? _drone;
 
         private readonly CompositeDisposable _subs = new();
+        private DateTime _lastHeartbeatUtc = DateTime.MinValue;
+        private Task? _linkWatchdogTask;
+        private Task? _gcsHeartbeatTask;
 
         public DroneState CurrentState { get; } = new DroneState();
         public ObservableCollection<DetectedTarget> DetectedTargets { get; } = new ObservableCollection<DetectedTarget>();
@@ -54,13 +60,21 @@ namespace GCS_Project.xServices
             _router = _protocol.CreateRouter("GCS_ROUTER");
             OnLogReceived?.Invoke("[MAV] Router created");
 
-            // 1) PX4 → GCS (수신)
+
+            // 1) PX4 → GCS (Telemetry 수신)
             AddUdpListenPort(_router, listenHost, listenPort);
             OnLogReceived?.Invoke($"[MAV] UDP listen {listenHost}:{listenPort}");
 
-            // 2) GCS → PX4 (송신)  ★ 이 줄 추가
+            // 2) GCS → PX4 (Command 송신)
             AddUdpOutPort(_router, "192.168.0.6", 14551);
-            OnLogReceived?.Invoke("[MAV] UDP out 192.168.0.6:18570 added");
+            
+
+            // 2) GCS → PX4 (송신)  ★ 이 줄 추가
+            /*AddUdpOutPort(_router, "192.168.0.6", 14551);
+            OnLogReceived?.Invoke("[MAV] UDP out 192.168.0.6:14551 added");*/
+
+            // 추가 02/23
+            //await UdpOutSmokeTestAsync("192.168.0.6", 14551);
 
             var seq = new PacketSequenceCalculator();
             var identity = new MavlinkIdentity(255, 255);
@@ -82,12 +96,15 @@ namespace GCS_Project.xServices
             OnLogReceived?.Invoke("[MAV] DeviceExplorer created");
 
             var found = new TaskCompletionSource();
-            _subs.Add(_explorer.Devices.ObserveAdd().Take(1).Subscribe(kvp =>
+
+            _subs.Add(_explorer.Devices.ObserveAdd().Take(1).Subscribe(e =>
             {
-                _drone = kvp.Value.Value;
+                _drone = e.Value.Value; 
+
                 OnLogReceived?.Invoke("[MAV] Device found");
                 found.TrySetResult();
             }));
+
             OnLogReceived?.Invoke("[MAV] Waiting device(found)...");
             await found.Task;
 
@@ -103,9 +120,16 @@ namespace GCS_Project.xServices
             HookTelemetry(_drone);
             OnLogReceived?.Invoke("[MAV] Telemetry hooked");
 
-            CurrentState.IsConnected = true;
-            OnDataUpdated?.Invoke(CurrentState);
-            OnLogReceived?.Invoke("[MAV] Connected");
+            HookCommandAck(_drone);
+
+            // GCS Heartbeat microservice 활성화
+            var hb = _drone.GetMicroservice<IHeartbeatClient>();
+
+            StartLinkWatchdog();
+
+            OnLogReceived?.Invoke("[MAV] 장치 연결됨 (device ready)");
+
+            //await SendDisarmAsync();
         }
 
         private static void AddUdpListenPort(IProtocolRouter router, string host, int port)
@@ -123,19 +147,18 @@ namespace GCS_Project.xServices
 
             });
         }
+
         private static void AddUdpOutPort(IProtocolRouter router, string host, int port)
         {
             router.AddUdpPort(p =>
             {
                 p.Scheme = "udp";
                 p.Host = host;     // 우분투 IP
-                p.Port = port;     // PX4가 듣는 포트 (18570)
+                p.Port = port;     // PX4가 듣는 포트 
                 p.IsEnabled = true;
                 p.Name = "udp_out";
             });
         }
-
-
 
         private void HookTelemetry(IClientDevice drone)
         {
@@ -147,8 +170,14 @@ namespace GCS_Project.xServices
             {
                 _subs.Add(hb.RawHeartbeat.Subscribe(h =>
                 {
-                    CurrentState.IsConnected = true;
-                    OnDataUpdated?.Invoke(CurrentState);
+                    _lastHeartbeatUtc = DateTime.UtcNow;
+
+                    if (!CurrentState.IsConnected)
+                    {
+                        CurrentState.IsConnected = true;
+                        OnDataUpdated?.Invoke(CurrentState);
+                        OnLogReceived?.Invoke("[MAV] 통신 연결됨 (heartbeat)");
+                    }
                 }));
                 OnLogReceived?.Invoke("[MAV] Heartbeat hooked");
             }
@@ -242,6 +271,128 @@ namespace GCS_Project.xServices
             {
                 OnLogReceived?.Invoke($"[MAV] SystemStatus subscribe failed: {ex.Message}");
             }*/
+
+        }
+
+        private void HookCommandAck(IClientDevice drone)
+        {
+            var cmd = drone.GetMicroservice<ICommandClient>();
+            if (cmd == null)
+            {
+                OnLogReceived?.Invoke("[MAV] ICommandClient NOT found");
+                return;
+            }
+
+            _subs.Add(cmd.OnCommandAck.Subscribe(ack =>
+            {
+                OnLogReceived?.Invoke($"[MAV] COMMAND_ACK: cmd={ack.Command} result={ack.Result}");
+            }));
+
+            OnLogReceived?.Invoke("[MAV] COMMAND_ACK hooked");
+        }
+
+        private void StartLinkWatchdog()
+        {
+            // 중복 실행 방지
+            if (_linkWatchdogTask != null) return;
+
+            _lastHeartbeatUtc = DateTime.UtcNow;
+
+            _linkWatchdogTask = Task.Run(async () =>
+            {
+                OnLogReceived?.Invoke("[MAV] Link watchdog started");
+
+                while (_cts != null && !_cts.IsCancellationRequested)
+                {
+                    try
+                    {
+                        var ageMs = (DateTime.UtcNow - _lastHeartbeatUtc).TotalMilliseconds;
+
+                        // 3초 이상 heartbeat 없음 => 링크 다운 처리
+                        if (ageMs > 3000 && CurrentState.IsConnected)
+                        {
+                            CurrentState.IsConnected = false;
+                            OnDataUpdated?.Invoke(CurrentState);
+                            OnLogReceived?.Invoke("[MAV] 통신 끊김 (heartbeat timeout)");
+                        }
+
+                        await Task.Delay(200, _cts.Token);
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        OnLogReceived?.Invoke($"[MAV] Watchdog error: {ex.Message}");
+                        await Task.Delay(500);
+                    }
+                }
+
+                OnLogReceived?.Invoke("[MAV] Link watchdog stopped");
+            });
+        }
+
+        public async Task SendDisarmAsync()
+        {
+            if (_drone == null)
+            {
+                OnLogReceived?.Invoke("[MAV] SendDisarmAsync failed: _drone null");
+                return;
+            }
+
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null)
+            {
+                OnLogReceived?.Invoke("[MAV] SendDisarmAsync failed: ICommandClient null");
+                return;
+            }
+
+            OnLogReceived?.Invoke("[MAV] Sending DISARM (MAV_CMD_COMPONENT_ARM_DISARM, p1=0) ...");
+
+            // SendCommandLong(MavCmd, p1..p7, CancellationToken)
+            await cmd.SendCommandLong(
+                MavCmd.MavCmdComponentArmDisarm, // = MAV_CMD_COMPONENT_ARM_DISARM
+                0f,  // param1: 0 = DISARM
+                0f,  // param2
+                0f,  // param3
+                0f,  // param4
+                0f,  // param5
+                0f,  // param6
+                0f,  // param7
+                _cts?.Token ?? CancellationToken.None
+            );
+        }
+
+        public async Task SendArmAsync()
+        {
+            if (_drone == null)
+            {
+                OnLogReceived?.Invoke("[MAV] ARM 실패: 드론 객체 없음");
+                return;
+            }
+
+            if (!CurrentState.IsConnected)
+            {
+                OnLogReceived?.Invoke("[MAV] ARM 실패: 통신 끊김 상태");
+                return;
+            }
+
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null)
+            {
+                OnLogReceived?.Invoke("[MAV] ARM 실패: ICommandClient 없음");
+                return;
+            }
+
+            OnLogReceived?.Invoke("[MAV] ARM 명령 전송");
+
+            await cmd.SendCommandLong(
+                MavCmd.MavCmdComponentArmDisarm,
+                1f, // ARM
+                0f, 0f, 0f, 0f, 0f, 0f,
+                _cts?.Token ?? CancellationToken.None
+            );
         }
 
         public async Task StopAsync()
