@@ -5,8 +5,9 @@ using GCS_Project.Models;
 using GCS_Project.Services;
 using GCS_Project.ViewModels;
 using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 using LibVLCSharp.Shared;
-
+using System.Windows.Controls.Primitives;
 
 namespace GCS_Project
 {
@@ -46,6 +47,25 @@ namespace GCS_Project
                     _viewModel = vm;
             };
 
+            this.LocationChanged += (s, e) => {
+                var offset = myPopup.HorizontalOffset;
+                myPopup.HorizontalOffset = offset + 0.01;
+                myPopup.HorizontalOffset = offset;
+            };
+
+            this.LocationChanged += (s, e) =>
+            {
+                // 1. 인공지평선/나침반 팝업 갱신
+                double offset1 = myPopup.HorizontalOffset;
+                myPopup.HorizontalOffset = offset1 + 0.01;
+                myPopup.HorizontalOffset = offset1;
+
+                // 2. 카메라 제어 패널 팝업 갱신
+                double offset2 = cameraPopup.HorizontalOffset;
+                cameraPopup.HorizontalOffset = offset2 + 0.01;
+                cameraPopup.HorizontalOffset = offset2;
+            };
+
             this.Loaded += MainWindow_Loaded;
         }
         #endregion
@@ -53,36 +73,54 @@ namespace GCS_Project
         #region [3. 초기화 (Initialization)]
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            if (_viewModel == null) 
-                return;
+            if (_viewModel == null) return;
 
+            await InitializeMapAsync();
+        }
+
+        private async Task InitializeMapAsync()
+        {
             try
             {
-                // 1. WebView2 및 MapController 초기화
-                await mapWebView.EnsureCoreWebView2Async(null);
+                // 1. 중복 초기화 방지 체크
+                if (mapWebView.CoreWebView2 != null) return;
+
+                // 2. 환경 설정 (한 번만 수행)
+                // 사용자 데이터 폴더를 명시적으로 지정하면 안정성이 올라갑니다 (null 대신 경로 지정 가능)
+                var options = new CoreWebView2EnvironmentOptions();
+                var env = await CoreWebView2Environment.CreateAsync(null, null, options);
+
+                // 3. 비동기 초기화 시작
+                await mapWebView.EnsureCoreWebView2Async(env);
+
+                // 4. 초기화 성공 후 설정 (이 순서가 매우 중요합니다!)
+                // 배경 투명 설정
+                mapWebView.DefaultBackgroundColor = System.Drawing.Color.Transparent;
+
                 _mapController = new MapController(mapWebView);
 
-                // 2. 지도 HTML 로드
+                // 5. 지도 HTML 로드
                 string mapPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "map.html");
                 if (File.Exists(mapPath))
                 {
                     mapWebView.Source = new Uri(mapPath);
                 }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("지도 파일을 찾을 수 없습니다: " + mapPath);
+                }
 
-                // 3. 뷰모델과 지도를 연결 (브릿지 설정)
+                // 6. 브릿지 및 메시지 설정
                 InitializeMapBridge();
-
-                // 4. 지도에서 보낸 메시지 수신 설정
                 mapWebView.WebMessageReceived += OnWebMessageReceived;
-
-
-                // PlayRtpStream(_mp1);
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"지도 초기화 실패: {ex.Message}", "오류", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+
         #endregion
 
         #region [4. 브릿지: ViewModel -> Map (Event Subscriptions)]
@@ -102,10 +140,17 @@ namespace GCS_Project
             // 2. 이륙 지점 마커 설정
             _viewModel.TakeoffPointSet += (lat, lng) =>
             {
-                _ = _mapController.AddTakeoffMarker(lat, lng);
+                // UI 스레드에서 실행되도록 Dispatcher로 감싸줍니다.
+                Dispatcher.InvokeAsync(async () =>
+                {
+                    if (_mapController != null)
+                    {
+                        await _mapController.AddTakeoffMarker(lat, lng);
+                    }
+                });
             };
 
-            // 3. YOLO 다중 타겟 실시간 업데이트 및 이동
+            /*// 3. YOLO 다중 타겟 실시간 업데이트 및 이동
             // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.
             _viewModel.MavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
             {
@@ -113,16 +158,23 @@ namespace GCS_Project
                 {
                     await _mapController.UpdateTargetOnMap(id, lat, lng, type, isTracked);
                 });
-            };
+            };*/
 
             // 4. 경로(웨이포인트) 관리
             _viewModel.UndoWaypointRequested += async () =>
-                await _mapController.UndoLastWaypointOnMap();
+            {
+                // UI 스레드에서 실행되도록 보장
+                await Dispatcher.InvokeAsync(async () => {
+                    await _mapController.UndoLastWaypointOnMap();
+                });
+            };
 
             _viewModel.ClearWaypointsRequested += async () =>
             {
-                await _mapController.ClearAllWaypointsOnMap();
-                await mapWebView.ExecuteScriptAsync("clearAllMapElements()");
+                await Dispatcher.InvokeAsync(async () => {
+                    await _mapController.ClearAllWaypointsOnMap();
+                    await mapWebView.ExecuteScriptAsync("clearAllMapElements()");
+                });
             };
         }
         #endregion
