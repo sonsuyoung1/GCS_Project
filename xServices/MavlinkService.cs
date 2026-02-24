@@ -1,5 +1,4 @@
 ﻿using Asv.Cfg;
-using Asv.Common;
 using Asv.IO;
 using Asv.Mavlink;
 using Asv.Mavlink.Common;
@@ -7,43 +6,39 @@ using GCS_Project.Models;
 using ObservableCollections;
 using R3;
 using System;
-using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
+using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
-
-// GeoPoint 이름 충돌 방지
-using GeoPoint = GCS_Project.Models.GeoPoint;
 
 namespace GCS_Project.xServices
 {
     public class MavlinkService : IAsyncDisposable
     {
         #region [1. 필드 및 설정 (Core Fields)]
-
+        private readonly List<GeoPoint> _waypoints = new();
+        private bool _isMissionRunning;
+        private CancellationTokenSource? _cts;
+        private readonly CompositeDisposable _subs = new();
         private const string GcsRouterId = "GCS_ROUTER";
         private const int GcsSystemId = 255;
         private const int GcsComponentId = 255;
 
-        // v4 Core 객체
+        // v4 core
         private IProtocolFactory? _protocol;
         private IProtocolRouter? _router;
         private IDeviceExplorer? _explorer;
         private IClientDevice? _drone;
 
-        private readonly List<GeoPoint> _waypoints = new();
-        private bool _isMissionRunning;
-        private CancellationTokenSource? _cts;
-        private readonly CompositeDisposable _subs = new();
-
+        // 아래 두 줄이 추가됨
+        private DateTime _lastHeartbeatUtc = DateTime.MinValue;
+        private Task? _linkWatchdogTask;
         #endregion
 
         #region [2. 데이터 속성 및 상태 (State & Data)]
         public DroneState CurrentState { get; } = new DroneState();
-        public ObservableCollection<DetectedTarget> DetectedTargets { get; } = new();
+        // public ObservableCollection<DetectedTarget> DetectedTargets { get; } = new();
         #endregion
 
         #region [3. 이벤트 (Events)]
@@ -51,22 +46,21 @@ namespace GCS_Project.xServices
         public event Action<string>? OnLogReceived;
         public event Action<int>? OnWaypointCountChanged;
         public event Action? OnMissionCompleted;
-        // public event Action<int, double, double, string, bool>? OnTargetLocationUpdated;
         #endregion
 
         #region [4. 초기화 및 서비스 제어 (Lifecycle)]
-        public MavlinkService()
-        {
-            // 초기 위치 설정 (한서대학교)
-            CurrentState.Latitude = 36.6906;
-            CurrentState.Longitude = 126.5820;
-            CurrentState.IsConnected = false;
-        }
-
+        /// <summary>
+        /// MAVLink 프로토콜과 UDP 라우터를 초기화하여 기체를 탐색하고, 연결이 완료되면 데이터 스트림을 활성화합니다.
+        /// </summary>
+        /// <param name="listenHost"></param>
+        /// <param name="listenPort"></param>
+        /// <param name="droneIp"></param>
+        /// <returns></returns>
         public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14550, string droneIp = "192.168.1.136")
         {
             if (_router != null) return;
-            OnLogReceived?.Invoke("[MAV] MAVLink 서비스 시작 중...");
+
+            OnLogReceived?.Invoke("[시스템] MAVLink 서비스 시작 중...");
 
             _cts = new CancellationTokenSource();
 
@@ -79,8 +73,8 @@ namespace GCS_Project.xServices
             });
             OnLogReceived?.Invoke("[MAV] 프로토콜 생성");
 
-
             // 2. 라우터 설정 (데이터 통로)
+            // PX4 → GCS (Telemetry 수신)
             _router = _protocol.CreateRouter(GcsRouterId);
             _router.AddUdpPort(p =>
             {
@@ -90,7 +84,9 @@ namespace GCS_Project.xServices
                 p.IsEnabled = true;
                 p.Name = "udp_in";
             });
+            OnLogReceived?.Invoke("[MAV] Router created");
 
+            // GCS →  PX4 (Telemetry 수신)
             _router.AddUdpPort(p =>
             {
                 p.Scheme = "udp";
@@ -122,6 +118,7 @@ namespace GCS_Project.xServices
             await found.Task;
             OnLogReceived?.Invoke("[시스템] 드론 장치 감지됨");
 
+
             // 5. 드론 상태 준비 완료 대기
             var ready = new TaskCompletionSource();
             _subs.Add(_drone!.State.Subscribe(st =>
@@ -134,24 +131,30 @@ namespace GCS_Project.xServices
             // 6. 데이터 스트림 연결
             HookTelemetry(_drone);
             OnLogReceived?.Invoke("[MAV] 텔레메트리가 연결됨");
-            HookCommandAck(_drone);
             // HookCustomMessages(_router); // YOLO 전용
+            HookCommandAck(_drone);
+            StartLinkWatchdog();
 
-            CurrentState.IsConnected = true;
-            OnDataUpdated?.Invoke(CurrentState);
-            OnLogReceived?.Invoke("[시스템] 연결 및 초기화 완료");
+            OnLogReceived?.Invoke("[MAV] 장치 연결됨 (device ready)");
         }
 
+        /// <summary>
+        /// 활성화된 모든 MAVLink 통신 연결과 비동기 작업을 안전하게 종료하고, 메모리 누수 방지를 위해 리소스를 해제합니다.
+        /// </summary>
+        /// <returns></returns>
         public async Task StopAsync()
         {
             _isMissionRunning = false;
+
             _subs.Dispose();
+
             _cts?.Cancel();
             _cts?.Dispose();
             _cts = null;
 
             if (_explorer is IAsyncDisposable ax1) await ax1.DisposeAsync();
             _explorer = null;
+
             if (_router is IAsyncDisposable ax2) await ax2.DisposeAsync();
             _router = null;
 
@@ -160,12 +163,15 @@ namespace GCS_Project.xServices
 
             CurrentState.IsConnected = false;
             OnDataUpdated?.Invoke(CurrentState);
-            OnLogReceived?.Invoke("[시스템] 연결 종료됨");
+            OnLogReceived?.Invoke("[MAV] 연결 종료됨");
         }
         #endregion
 
-
         #region [5. 텔레메트리 핸들링 (Telemetry Hooks)]
+        /// <summary>
+        /// 드론의 실시간 센서 데이터(하트비트, GPS, 배터리, 기체 자세 등) 스트림을 구독하여 GCS 상태를 갱신합니다.
+        /// </summary>
+        /// <param name="drone"></param>
         private void HookTelemetry(IClientDevice drone)
         {
             OnLogReceived?.Invoke("[MAV] 센서 데이터(Telemetry) 스트림 연결 시작...");
@@ -225,6 +231,10 @@ namespace GCS_Project.xServices
             OnLogReceived?.Invoke("[MAV] 모든 데이터 스트림 파이프 연결 완료");
         }
 
+        /// <summary>
+        /// GCS가 전송한 명령에 대한 드론의 응답(수락/거절 사유)을 파싱하여 로깅합니다.
+        /// </summary>
+        /// <param name="drone"></param>
         private void HookCommandAck(IClientDevice drone)
         {
             var cmd = drone.GetMicroservice<ICommandClient>();
@@ -246,11 +256,11 @@ namespace GCS_Project.xServices
                 // 2. MAVLink 결과를 명확한 상태 메시지와 아이콘으로 번역
                 string resultText = ack.Result switch
                 {
-                    MavResult.MavResultAccepted => " 수락 및 실행됨",
-                    MavResult.MavResultTemporarilyRejected => " 일시적 거절 (드론 바쁨)",
-                    MavResult.MavResultDenied => " 거절됨 (조건 불만족)",
-                    MavResult.MavResultUnsupported => " 지원하지 않는 명령",
-                    MavResult.MavResultFailed => " 실행 실패",
+                    MavResult.MavResultAccepted => "수락 및 실행됨",
+                    MavResult.MavResultTemporarilyRejected => "일시적 거절 (드론 바쁨)",
+                    MavResult.MavResultDenied => "거절됨 (조건 불만족)",
+                    MavResult.MavResultUnsupported => "지원하지 않는 명령",
+                    MavResult.MavResultFailed => "실행 실패",
                     _ => $"알 수 없음 ({ack.Result})"
                 };
 
@@ -265,6 +275,58 @@ namespace GCS_Project.xServices
                 }
 
             }).AddTo(_subs); // 잊지 않고 바구니에 담기!
+        }
+
+        /// <summary>
+        /// // 백그라운드에서 기체의 심장 박동(Heartbeat)을 지속적으로 감시하여, 지정된 시간(3초) 응답이 없으면 통신 단절로 처리합니다.
+        /// </summary>
+        private void StartLinkWatchdog()
+        {
+            // 1. 중복 실행 방지 (완전히 끝나지 않은 요원이 있으면 패스)
+            if (_linkWatchdogTask != null && !_linkWatchdogTask.IsCompleted) return;
+
+            _lastHeartbeatUtc = DateTime.UtcNow;
+
+            _linkWatchdogTask = Task.Run(async () =>
+            {
+                OnLogReceived?.Invoke("[시스템] 통신 상태 감시(Watchdog) 백그라운드 가동");
+
+                try
+                {
+                    // CancellationToken이 유효한 동안만 무한 순찰
+                    while (_cts != null && !_cts.Token.IsCancellationRequested)
+                    {
+                        var ageMs = (DateTime.UtcNow - _lastHeartbeatUtc).TotalMilliseconds;
+
+                        // 2. 3초 이상 심장 박동(Heartbeat)이 없으면 연결 끊김으로 간주
+                        if (ageMs > 3000 && CurrentState.IsConnected)
+                        {
+                            CurrentState.IsConnected = false;
+                            OnDataUpdated?.Invoke(CurrentState);
+
+                            // 조종사가 확 띄게 볼 수 있도록 비상 이모지 및 직관적 메시지 사용
+                            OnLogReceived?.Invoke("[비상] 기체와의 통신이 끊겼습니다! (Heartbeat Timeout)");
+                        }
+
+                        // 0.2초마다 상태 확인 (만약 취소 명령이 오면 즉시 깨어남)
+                        await Task.Delay(200, _cts.Token);
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                    // StopAsync가 호출되어 정상적으로 감시가 취소된 경우 (조용히 무시)
+                }
+                catch (Exception ex)
+                {
+                    OnLogReceived?.Invoke($"[오류] 감시 프로세스 에러: {ex.Message}");
+                }
+                finally
+                {
+                    // 3. 핵심 버그 해결: 감시가 끝나면 반드시 요원을 초기화(null)하여 다음 연결을 준비!
+                    _linkWatchdogTask = null;
+                    OnLogReceived?.Invoke("[시스템] 통신 상태 감시(Watchdog) 종료");
+                }
+            });
         }
 
         // 아래 주석 친 부분이 yolo로 객체 탐지하여 마브링크 프로토콜로 받아 파싱하기 위한 로직임.
@@ -332,17 +394,18 @@ namespace GCS_Project.xServices
         #endregion
 
 
-        #region [6. 비행 명령 제어 (Flight Commands)]
+
+        #region [6. 비행 명령 (Flight Commands)]
         /// <summary>
         /// 지정된 고도로 이륙 명령(Takeoff)을 전송합니다.
         /// </summary>
         /// <param name="altitude">목표 이륙 고도 (미터)</param>
         public async Task Takeoff(float altitude)
         {
-            // 1. 안전장치: 드론 객체와 명령 부서가 정상인지 확인
-            if (_drone == null)
+            // 1. 안전장치: 드론 객체와 통신 상태(IsConnected)까지 꼼꼼하게 확인
+            if (_drone == null || !CurrentState.IsConnected)
             {
-                OnLogReceived?.Invoke(" [경고] 기체가 연결되지 않아 이륙할 수 없습니다.");
+                OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 이륙할 수 없습니다.");
                 return;
             }
 
@@ -352,15 +415,18 @@ namespace GCS_Project.xServices
             // 2. 명령 전송 및 에러 방어막 (try-catch)
             try
             {
-                OnLogReceived?.Invoke($" [명령] 이륙 시도 (목표 고도: {altitude}m)...");
+                OnLogReceived?.Invoke($"[명령] 이륙 시도 (목표 고도: {altitude}m)...");
 
-                // Param 7 자리에 목표 고도(altitude)를 넣어서 전송!
-                await cmd.CommandLong(MavCmd.MavCmdNavTakeoff, 0, 0, 0, 0, 0, 0, altitude);
+                await cmd.SendCommandLong(
+                    MavCmd.MavCmdNavTakeoff,
+                    0f, 0f, 0f, 0f, 0f, 0f, altitude, // altitude는 이미 float이므로 그대로 둠
+                    _cts?.Token ?? CancellationToken.None
+                );
             }
             catch (Exception ex)
             {
                 // 통신 지연이나 에러 발생 시 프로그램이 안 튕기도록 조용히 로그만 출력
-                OnLogReceived?.Invoke($" [오류] 이륙 명령 전송 실패: {ex.Message}");
+                OnLogReceived?.Invoke($"[오류] 이륙 명령 전송 실패: {ex.Message}");
             }
         }
 
@@ -369,8 +435,8 @@ namespace GCS_Project.xServices
         /// </summary>
         public async Task Landing()
         {
-            // 1. 안전장치: 널 포인터 폭발(Crash)을 막기 위해 꼼꼼하게 체크
-            if (_drone == null)
+            // 1. 안전장치
+            if (_drone == null || !CurrentState.IsConnected)
             {
                 OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 착륙 명령을 내릴 수 없습니다.");
                 return;
@@ -382,10 +448,13 @@ namespace GCS_Project.xServices
             // 2. 명령 전송 및 에러 방어막
             try
             {
-                OnLogReceived?.Invoke("[명령] 착륙 시도...");
+                OnLogReceived?.Invoke(" [명령] 착륙 시도...");
 
-                // 착륙은 특별한 파라미터 없이 전부 0으로 채워서 보냄
-                await cmd.CommandLong(MavCmd.MavCmdNavLand, 0, 0, 0, 0, 0, 0, 0);
+                await cmd.SendCommandLong(
+                    MavCmd.MavCmdNavLand,
+                    0f, 0f, 0f, 0f, 0f, 0f, 0f,
+                    _cts?.Token ?? CancellationToken.None
+                );
             }
             catch (Exception ex)
             {
@@ -398,8 +467,8 @@ namespace GCS_Project.xServices
         /// </summary>
         public async Task Rtl()
         {
-            // 1. 안전장치: 조종사가 버튼을 눌렀는데 드론이 없으면 '침묵'하지 않고 이유를 알려줌!
-            if (_drone == null)
+            // 1. 안전장치
+            if (_drone == null || !CurrentState.IsConnected)
             {
                 OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 복귀(RTL) 명령을 내릴 수 없습니다.");
                 return;
@@ -413,67 +482,321 @@ namespace GCS_Project.xServices
             {
                 OnLogReceived?.Invoke("[명령] 드론 복귀(RTL) 시도 중...");
 
-                // 20번 = MavCmdNavReturnToLaunch (RTL), 파라미터는 모두 0
-                await cmd.CommandLong(MavCmd.MavCmdNavReturnToLaunch, 0, 0, 0, 0, 0, 0, 0);
+                await cmd.SendCommandLong(
+                    MavCmd.MavCmdNavReturnToLaunch,
+                    0f, 0f, 0f, 0f, 0f, 0f, 0f,
+                    _cts?.Token ?? CancellationToken.None
+                );
             }
             catch (Exception ex)
             {
-                // 전파가 끊기거나 명령이 씹혀도 프로그램이 죽지 않도록 방어!
                 OnLogReceived?.Invoke($"[오류] 복귀(RTL) 명령 전송 실패: {ex.Message}");
             }
         }
 
-        public async Task SetFlightMode(MavMode mode, uint customMode)
+        /// <summary>
+        /// 기체의 모터를 회전시키는 시동(Arm) 명령을 전송합니다.
+        /// </summary>
+        public async Task SendArmAsync()
         {
-            // 1. 추상 클래스 대신 '완성된 패킷 클래스'를 사용합니다!
-            var packet = new SetModePacket();
+            // 1. 방탄 안전장치 (통일)
+            if (_drone == null || !CurrentState.IsConnected)
+            {
+                OnLogReceived?.Invoke("[경고] 통신이 끊겨 시동(Arm)을 걸 수 없습니다.");
+                return;
+            }
 
-            // 2. 보내는 사람(GCS)의 정보를 봉투 겉면에 적습니다.
-            packet.SystemId = (byte)GcsSystemId;
-            packet.ComponentId = (byte)GcsComponentId;
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null) return;
 
-            // 3. 내용물(Payload)을 채웁니다.
-            packet.Payload.BaseMode = mode;
-            packet.Payload.CustomMode = customMode;
-            packet.Payload.TargetSystem = 1;
+            // 2. 에러 방어막 및 전송
+            try
+            {
+                OnLogReceived?.Invoke("[명령] 기체 시동(Arm) 전송 중...");
 
-            // 4. 완벽하게 2개의 인수(메시지, 토큰)만 사용해서 보냅니다.
-            await _router!.Send(packet, _cts!.Token);
+                // 파라미터 1번 = 1 (Arm)
+                await cmd.SendCommandLong(
+                    MavCmd.MavCmdComponentArmDisarm,
+                    1f, 0f, 0f, 0f, 0f, 0f, 0f,
+                    _cts?.Token ?? CancellationToken.None
+                );
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] 시동(Arm) 명령 전송 실패: {ex.Message}");
+            }
         }
 
-        /*// Yolo로 객체 추적 로직
-        public async Task GoTo(double lat, double lng, float alt = 5.0f)
+        /// <summary>
+        /// 기체의 모터를 정지시키는 시동 끄기(Disarm) 명령을 전송합니다.
+        /// </summary>
+        public async Task SendDisarmAsync()
         {
-            // 1. 완성된 패킷 클래스 생성
-            var packet = new SetPositionTargetGlobalIntPacket();
+            // 1. Disarm에도 IsConnected 안전장치 추가!
+            if (_drone == null || !CurrentState.IsConnected)
+            {
+                OnLogReceived?.Invoke("[경고] 통신이 끊겨 시동을 끌 수(Disarm) 없습니다.");
+                return;
+            }
 
-            // 2. 헤더 정보(Identity) 설정
-            packet.SystemId = (byte)GcsSystemId;
-            packet.ComponentId = (byte)GcsComponentId;
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null) return;
 
-            // 3. 페이로드 설정
-            packet.Payload.LatInt = (int)(lat * 1E7);
-            packet.Payload.LonInt = (int)(lng * 1E7);
-            packet.Payload.Alt = alt;
-            packet.Payload.CoordinateFrame = MavFrame.MavFrameGlobalRelativeAltInt;
-            packet.Payload.TypeMask = (PositionTargetTypemask)3576;
-            packet.Payload.TargetSystem = 1;
-            packet.Payload.TargetComponent = 1;
+            // 2. 에러 방어막 및 전송
+            try
+            {
+                OnLogReceived?.Invoke("[명령] 기체 시동 끄기(Disarm) 전송 중...");
 
-            // 4. 전송 (인수 2개로 완벽하게 일치!)
-            await _router!.Send(packet, _cts!.Token);
-        }*/
+                // 파라미터 1번 = 0 (Disarm)
+                await cmd.SendCommandLong(
+                    MavCmd.MavCmdComponentArmDisarm,
+                    0f, 0f, 0f, 0f, 0f, 0f, 0f,
+                    _cts?.Token ?? CancellationToken.None
+                );
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] 시동 끄기(Disarm) 명령 전송 실패: {ex.Message}");
+            }
+        }
+
+
         #endregion
 
+
+
         #region [7. 미션 로직 (Mission & Waypoints)]
-        // 웨이포인트 추가
-        public void AddWaypoint(double lat, double lng)
+        /// <summary>
+        /// 등록된 웨이포인트를 순차적으로 방문하는 자율 비행 임무를 시작합니다.
+        /// </summary>
+        public void StartMission()
         {
-            _waypoints.Add(new GeoPoint { Lat = lat, Lng = lng });
-            OnWaypointCountChanged?.Invoke(_waypoints.Count);
+            // 1. 사전 검사: 임무 수행 가능 여부 확인
+            if (_isMissionRunning || _waypoints.Count == 0 || !CurrentState.IsConnected)
+            {
+                OnLogReceived?.Invoke("[경고] 임무 시작 불가: 웨이포인트가 없거나 연결 상태를 확인하세요.");
+                return;
+            }
+
+            _isMissionRunning = true;
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    OnLogReceived?.Invoke($"[미션] 웨이포인트 비행 시작 (남은 지점: {_waypoints.Count}개)");
+
+                    // 2. 비행 모드 변경: 컴퓨터 명령을 듣는 GUIDED(4) 모드로 전환
+                    await SetFlightMode((MavMode)1, 4);
+                    await Task.Delay(500, _cts?.Token ?? CancellationToken.None);
+
+                    // 현재 드론이 향하고 있는 '지점'을 추적하기 위한 변수
+                    GeoPoint currentDestination = null;
+
+                    // 3. 임무 루프: 리스트에 방문할 점이 남아있는 동안 반복
+                    while (_isMissionRunning && _waypoints.Count > 0)
+                    {
+                        if (_cts != null && _cts.IsCancellationRequested) break;
+
+                        // 리스트의 가장 앞(0번)에 있는 지점을 '이번에 가야 할 곳'으로 설정
+                        var nextPoint = _waypoints[0];
+
+                        // 🌟 핵심 로직: 새로운 지점으로 목적지가 바뀌었을 때만 GoTo 명령 전송 (중복 전송 방지)
+                        if (currentDestination != nextPoint)
+                        {
+                            await GoTo(nextPoint.Lat, nextPoint.Lng);
+                            currentDestination = nextPoint;
+
+                            OnLogReceived?.Invoke($"[미션] 다음 웨이포인트로 이동 중... (위도: {Math.Round(nextPoint.Lat, 5)}, 경도: {Math.Round(nextPoint.Lng, 5)})");
+                        }
+
+                        // 4. 도착 판정: 드론이 해당 지점의 일정 반경(예: 3m) 안에 들어왔는지 확인
+                        if (IsReached(nextPoint))
+                        {
+                            _waypoints.RemoveAt(0); // 도달한 지점은 리스트에서 제거
+                            OnWaypointCountChanged?.Invoke(_waypoints.Count);
+                            OnLogReceived?.Invoke($"[미션] 웨이포인트 도달 완료. (남은 지점: {_waypoints.Count}개)");
+
+                            // 목적지가 삭제되었으므로 다음 루프에서 새로운 0번 점을 목적지로 설정하게 됨
+                        }
+
+                        // 1초 간격으로 상태 체크 (통신 과부하 방지)
+                        await Task.Delay(1000, _cts?.Token ?? CancellationToken.None);
+                    }
+
+                    // 5. 종료 결과 보고
+                    if (_waypoints.Count == 0)
+                    {
+                        OnLogReceived?.Invoke("[미션] 모든 예약된 지점을 방문하였습니다.");
+                        OnMissionCompleted?.Invoke();
+                    }
+                    else
+                    {
+                        OnLogReceived?.Invoke("[미션] 사용자에 의해 임무가 중단되었습니다.");
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                    OnLogReceived?.Invoke("[미션] 시스템 종료로 임무가 중단되었습니다.");
+                }
+                catch (Exception ex)
+                {
+                    OnLogReceived?.Invoke($"[오류] 미션 루프 에러: {ex.Message}");
+                }
+                finally
+                {
+                    _isMissionRunning = false;
+                }
+            });
         }
 
-        // 마지막 웨이포인트 삭제
+        /// <summary>
+        /// 드론의 비행 모드(GUIDED, AUTO, RTL 등)를 변경합니다.
+        /// </summary>
+        /// <param name="mode">기본 모드 플래그 (일반적으로 MavMode.MavModeFlagCustomModeEnabled 사용)</param>
+        /// <param name="customMode">FC별 고유 모드 번호 (ArduPilot GUIDED = 4)</param>
+        public async Task SetFlightMode(MavMode mode, uint customMode)
+        {
+            if (_drone == null || !CurrentState.IsConnected)
+            {
+                OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 모드를 변경할 수 없습니다.");
+                return;
+            }
+
+            try
+            {
+                var packet = new SetModePacket();
+
+                packet.SystemId = (byte)GcsSystemId;
+                packet.ComponentId = (byte)GcsComponentId;
+
+                packet.Payload.TargetSystem = 1;
+                packet.Payload.BaseMode = mode | (MavMode)1;
+                packet.Payload.CustomMode = customMode;
+
+                if (_router != null)
+                {
+                    await _router.Send(packet, _cts?.Token ?? CancellationToken.None);
+                    OnLogReceived?.Invoke($"[명령] 비행 모드 변경 요청 (코드: {customMode})");
+                }
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] 모드 변경 중 예외 발생: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 지정된 위도, 경도, 고도로 기체를 즉시 이동시킵니다.
+        /// </summary>
+        public async Task GoTo(double lat, double lng, float alt = 5.0f)
+        {
+            // 1. 안전장치: 드론 객체와 라우터 상태 확인
+            if (_drone == null || !CurrentState.IsConnected || _router == null)
+            {
+                OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 이동 명령(GoTo)을 수행할 수 없습니다.");
+                return;
+            }
+
+            try
+            {
+                // 2. 패킷 생성
+                var packet = new SetPositionTargetGlobalIntPacket();
+
+                // 3. 발신자 정보 설정
+                packet.SystemId = (byte)GcsSystemId;
+                packet.ComponentId = (byte)GcsComponentId;
+
+                // 4. 내용물 설정
+                // MAVLink 규격에 따라 위도/경도에 10의 7승을 곱해 정수로 변환합니다.
+                packet.Payload.LatInt = (int)(lat * 1E7);
+                packet.Payload.LonInt = (int)(lng * 1E7);
+                packet.Payload.Alt = alt;
+
+                // 이륙 지점 기준 상대 고도 좌표계 사용
+                packet.Payload.CoordinateFrame = MavFrame.MavFrameGlobalRelativeAltInt;
+
+                // 위치 정보만 사용하고 속도/가속도/요(Yaw)는 무시하는 비트 마스크(3576)
+                packet.Payload.TypeMask = (PositionTargetTypemask)3576;
+
+                // ✅ 하드코딩된 '1' 대신 실제 연결된 드론의 번호를 사용합니다.
+                packet.Payload.TargetSystem = 1;
+                packet.Payload.TargetComponent = 1; // 일반적으로 비행제어기는 1번 컴포넌트입니다.
+
+                // 5. 전송
+                await _router.Send(packet, _cts?.Token ?? CancellationToken.None);
+
+                // 너무 잦은 로그 방지를 위해 StartMission에서 로그를 찍으므로 여기서는 생략하거나 디버그용으로만 사용합니다.
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] GoTo 명령 전송 중 예외 발생: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 드론이 현재 목표 지점(Target)의 허용 범위 내에 도달했는지 판정합니다.
+        /// </summary>
+        /// <summary>
+        /// 드론이 지정된 웨이포인트(지점)의 허용 범위(3m) 내에 도달했는지 확인합니다.
+        /// </summary>
+        private bool IsReached(GeoPoint destination)
+        {
+            // 한국 위도 기준 거리 계산 (근사치)
+            double latDiff = (CurrentState.Latitude - destination.Lat) * 111000;
+            double lngDiff = (CurrentState.Longitude - destination.Lng) * 88800;
+
+            // 피타고라스 정리를 이용한 실제 거리(m) 계산
+            double distanceInMeters = Math.Sqrt(Math.Pow(latDiff, 2) + Math.Pow(lngDiff, 2));
+
+            // 오차 범위 3m 이내면 도착으로 판정
+            bool reached = distanceInMeters < 3.0;
+
+            return reached;
+        }
+
+        /// <summary>
+        /// 진행 중인 자율 비행 임무를 즉시 중단하고 기체를 제자리에 정지시킵니다.
+        /// </summary>
+        public void StopMission()
+        {
+            if (!_isMissionRunning) return;
+
+            _isMissionRunning = false;
+
+            // 3. 소프트웨어만 멈추는 게 아니라, 드론에게도 '정지 명령'을 쏩니다.
+            // 보통 GUIDED 모드에서 GoTo를 멈추려면 현재 위치에서 멈추도록 유도하거나,
+            // 정지(LOITER/HOLD) 모드로 비행 모드를 강제 변경하는 것이 가장 안전합니다.
+            OnLogReceived?.Invoke("[미션] 사용자에 의해 임무가 중단되었습니다. 기체를 정지합니다.");
+
+            // 필요 시: await SetFlightMode(MavMode.MavModeFlagCustomModeEnabled, 4); 
+            // (이미 GUIDED라면 현재 위치로 다시 GoTo를 쏴서 멈추게 할 수 있습니다.)
+        }
+
+        /// <summary>
+        /// 지도에 새로운 웨이포인트(경유지) GPS 좌표를 추가합니다.
+        /// </summary>
+        /// <param name="lat">위도 (-90 ~ 90)</param>
+        /// <param name="lng">경도 (-180 ~ 180)</param>
+        public void AddWaypoint(double lat, double lng)
+        {
+            // 1. 방어 코딩: 유효하지 않은 GPS 좌표 필터링
+            if (lat < -90 || lat > 90 || lng < -180 || lng > 180)
+            {
+                OnLogReceived?.Invoke($"[경고] 유효하지 않은 GPS 좌표입니다. (Lat: {lat}, Lng: {lng})");
+                return;
+            }
+
+            _waypoints.Add(new GeoPoint { Lat = lat, Lng = lng });
+            OnWaypointCountChanged?.Invoke(_waypoints.Count);
+
+            // 2. UX 강화: 점이 정상적으로 추가되었음을 로그로 출력
+            OnLogReceived?.Invoke($"[미션] 웨이포인트 추가됨 (총 {_waypoints.Count}개)");
+        }
+
+        /// <summary>
+        /// 실수로 찍은 마지막 웨이포인트를 취소(삭제)합니다.
+        /// </summary>
         public void UndoWaypoint()
         {
             if (_waypoints.Count > 0)
@@ -483,7 +806,8 @@ namespace GCS_Project.xServices
 
                 // UI 화면에 웨이포인트 개수가 줄어들었다고 알려줍니다.
                 OnWaypointCountChanged?.Invoke(_waypoints.Count);
-                OnLogReceived?.Invoke($"[미션] 마지막 웨이포인트를 취소했습니다. (남은 개수: {_waypoints.Count})");
+
+                OnLogReceived?.Invoke($"[미션] 마지막 웨이포인트 취소 (남은 개수: {_waypoints.Count}개)");
             }
             else
             {
@@ -491,7 +815,9 @@ namespace GCS_Project.xServices
             }
         }
 
-        // 모든 웨이포인트 싹 다 지우기
+        /// <summary>
+        /// 등록된 모든 웨이포인트를 싹 다 지우고 초기화합니다.
+        /// </summary>
         public void ClearWaypoints()
         {
             if (_waypoints.Count > 0)
@@ -501,57 +827,19 @@ namespace GCS_Project.xServices
 
                 // UI 화면에 개수가 0이 되었다고 알려줍니다.
                 OnWaypointCountChanged?.Invoke(0);
+
                 OnLogReceived?.Invoke("[미션] 모든 웨이포인트를 삭제했습니다.");
+            }
+            else
+            {
+                // 이미 비어있을 때 누르면 조용히 알려주는 센스
+                OnLogReceived?.Invoke("[알림] 이미 웨이포인트가 비어있습니다.");
             }
         }
 
-        // 미션 시작 메서드.
-        public void StartMission()
-        {
-            if (_isMissionRunning || _waypoints.Count == 0) return;
-            _isMissionRunning = true;
 
-            Task.Run(async () => {
-                OnLogReceived?.Invoke("[미션] 웨이포인트 임무 시작");
-                
-                await SetFlightMode((MavMode)1, 4);
-
-                while (_isMissionRunning && _waypoints.Count > 0)
-                {
-                    var target = _waypoints[0];
-                    await GoTo(target.Lat, target.Lng);
-
-                    if (IsReached(target))
-                    {
-                        _waypoints.RemoveAt(0);
-                        OnWaypointCountChanged?.Invoke(_waypoints.Count);
-                        OnLogReceived?.Invoke($"[미션] 지점 도달. 남은 지점: {_waypoints.Count}");
-                    }
-                    await Task.Delay(1000);
-                }
-                _isMissionRunning = false;
-                OnMissionCompleted?.Invoke();
-                OnLogReceived?.Invoke("[미션] 모든 임무 완료");
-            });
-        }
-
-        private bool IsReached(GeoPoint target)
-        {
-            double dist = Math.Sqrt(Math.Pow(CurrentState.Latitude - target.Lat, 2) + Math.Pow(CurrentState.Longitude - target.Lng, 2));
-            return dist < 0.0001; // 약 10m 내외
-        }
-
-        
-
-        /*public async Task StopTracking()
-        {
-            // 아두파일럿 기준 CustomMode 5번이 'LOITER(가만히 떠 있기)' 모드입니다.
-            await SetFlightMode((MavMode)1, 5);
-            OnLogReceived?.Invoke("[명령] 추적 중지 및 제자리 정지(LOITER) 모드 전환");
-        }*/
-
-        public void StopMission() => _isMissionRunning = false;
         #endregion
+
 
         #region [8. 자원 해제 (Dispose)]
         public async ValueTask DisposeAsync() => await StopAsync();
