@@ -122,9 +122,7 @@
                     </StackPanel>
                     <StackPanel Style="{StaticResource StatusGroup}">
                         <TextBlock Text="LINK " Foreground="#94A3B8"/>
-                        <TextBlock Text="{Binding ConnectionStatusText}" 
-                                           Foreground="{Binding ConnectionStatusColor}" 
-                                           FontWeight="Bold"/>
+                        <TextBlock Text="{Binding IsConnected}" Foreground="#22C55E"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
