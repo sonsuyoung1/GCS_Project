@@ -164,8 +164,23 @@
             var wpNumber = waypointMarkers.length + 1;
 
             var wpIcon = L.divIcon({
-                html: `<div style="background:#3498db; color:white; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:11px; border:2px solid white;">${wpNumber}</div>`,
-                iconSize: [20, 20], iconAnchor: [10, 10]
+                className: '', // 기본 클래스 제거
+                html: `<div style="
+            background: #3498db; 
+            color: white; 
+            border-radius: 50%; 
+            width: 20px; 
+            height: 20px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 11px; 
+            font-weight: bold;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5); /* 가독성을 위한 그림자 살짝 추가 */
+            ">${wpNumber}</div>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
             });
 
             var marker = L.marker([lat, lng], { icon: wpIcon }).addTo(map);
@@ -181,9 +196,10 @@
 
         function undoLastWaypoint() {
             if (missionPoints.length > 0) {
-                missionPoints.pop();
                 var lastMarker = waypointMarkers.pop();
                 if (lastMarker) map.removeLayer(lastMarker);
+
+                missionPoints.pop();
                 missionLine.setLatLngs(missionPoints);
             }
         }

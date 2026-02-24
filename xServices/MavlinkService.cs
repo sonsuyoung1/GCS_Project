@@ -1,466 +1,560 @@
-﻿using System;
+﻿using Asv.Cfg;
+using Asv.Common;
+using Asv.IO;
+using Asv.Mavlink;
+using Asv.Mavlink.Common;
+using GCS_Project.Models;
+using ObservableCollections;
+using R3;
+using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Net;
-using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
-using GCS_Project.Models;
-using GCS_Project.xServices;
+using System.Windows;
 
-namespace GCS_Project.Services
+// GeoPoint 이름 충돌 방지
+using GeoPoint = GCS_Project.Models.GeoPoint;
+
+namespace GCS_Project.xServices
 {
-    public class MavlinkService
+    public class MavlinkService : IAsyncDisposable
     {
-        #region [1. 상수 및 필드 (Constants & Fields)]
-        private const int Port = 14550;
-        private const string DroneIp = "192.168.1.136";
+        #region [1. 필드 및 설정 (Core Fields)]
 
-        private byte _sequence = 0; // 패킷 순서 번호 (보낼 때마다 1씩 증가)
-        private const byte MSG_ID_HEARTBEAT = 0;
-        private const byte MSG_ID_GLOBAL_POSITION_INT = 33;
-        private const byte MSG_ID_YOLO_TARGET = 250; // ROS2 커스텀 메시지 ID
-        private const byte MSG_ID_SYS_STATUS = 1;
-        private const byte MSG_ID_VFR_HUD = 74;
+        private const string GcsRouterId = "GCS_ROUTER";
+        private const int GcsSystemId = 255;
+        private const int GcsComponentId = 255;
 
-        private UdpClient? _udpClient;
+        // v4 Core 객체
+        private IProtocolFactory? _protocol;
+        private IProtocolRouter? _router;
+        private IDeviceExplorer? _explorer;
+        private IClientDevice? _drone;
+
+        private readonly List<GeoPoint> _waypoints = new();
+        private bool _isMissionRunning;
         private CancellationTokenSource? _cts;
-        private bool _isMissionRunning = false;
-        private readonly List<GeoPoint> _waypoints = new List<GeoPoint>();
+        private readonly CompositeDisposable _subs = new();
+
         #endregion
 
-        #region [2. 속성 및 상태 (Properties & State)]
+        #region [2. 데이터 속성 및 상태 (State & Data)]
         public DroneState CurrentState { get; } = new DroneState();
-        public ObservableCollection<DetectedTarget> DetectedTargets { get; } = new ObservableCollection<DetectedTarget>();
+        public ObservableCollection<DetectedTarget> DetectedTargets { get; } = new();
         #endregion
 
         #region [3. 이벤트 (Events)]
-        public event Action<int, double, double, string, bool>? OnTargetLocationUpdated;
         public event Action<DroneState>? OnDataUpdated;
+        public event Action<string>? OnLogReceived;
         public event Action<int>? OnWaypointCountChanged;
         public event Action? OnMissionCompleted;
-        public event Action<string>? OnLogReceived;
+        // public event Action<int, double, double, string, bool>? OnTargetLocationUpdated;
         #endregion
 
-        #region [4. 생성자 및 초기화 (Constructor & Lifecycle)]
+        #region [4. 초기화 및 서비스 제어 (Lifecycle)]
         public MavlinkService()
         {
             // 초기 위치 설정 (한서대학교)
             CurrentState.Latitude = 36.6906;
             CurrentState.Longitude = 126.5820;
-            CurrentState.Altitude = 0;
             CurrentState.IsConnected = false;
         }
 
-        public void Start()
+        public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14550, string droneIp = "192.168.1.136")
         {
-            if (_udpClient != null) return;
+            if (_router != null) return;
+            OnLogReceived?.Invoke("[MAV] MAVLink 서비스 시작 중...");
+
             _cts = new CancellationTokenSource();
 
-            try
+            // 1. 프로토콜 엔진 생성
+            _protocol = Protocol.Create(builder =>
             {
-                _udpClient = new UdpClient();
-                _udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-                _udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, Port));
+                builder.RegisterMavlinkV2Protocol();
+                builder.Features.RegisterBroadcastFeature<MavlinkMessage>();
+                builder.Formatters.RegisterSimpleFormatter();
+            });
+            OnLogReceived?.Invoke("[MAV] 프로토콜 생성");
 
-                CurrentState.IsConnected = false;
-                OnDataUpdated?.Invoke(CurrentState);
 
-                // 수신 루프 시작
-                Task.Run(() => ReceiveData(_cts.Token), _cts.Token);
-                StartHeartbeatLoop(_cts.Token);
-            }
-            catch (Exception ex)
+            // 2. 라우터 설정 (데이터 통로)
+            _router = _protocol.CreateRouter(GcsRouterId);
+            _router.AddUdpPort(p =>
             {
-                System.Diagnostics.Debug.WriteLine($"[MAVLINK] 초기화 실패: {ex.Message}");
-            }
+                p.Scheme = "udp";
+                p.Host = listenHost;
+                p.Port = listenPort;
+                p.IsEnabled = true;
+                p.Name = "udp_in";
+            });
+
+            _router.AddUdpPort(p =>
+            {
+                p.Scheme = "udp";
+                p.Host = droneIp; // 메서드 매개변수인 droneIp("192.168.0.6") 사용
+                p.Port = 14552;
+                p.IsEnabled = true;
+                p.Name = "udp_out";
+            });
+
+            // 3. 장치 탐색기 설정 (드론 자동 찾기)
+            var seq = new PacketSequenceCalculator();
+            var identity = new MavlinkIdentity(GcsSystemId, GcsComponentId);
+
+            _explorer = DeviceExplorer.Create(_router, b =>
+            {
+                b.SetConfig(new ClientDeviceBrowserConfig { DeviceTimeoutMs = 1000 });
+                b.Factories.RegisterDefaultDevices(identity, seq, new InMemoryConfiguration());
+            });
+            OnLogReceived?.Invoke("[MAV] DeviceExplorer가 생성되었습니다");
+
+            // 4. 드론 장치 발견 대기
+            var found = new TaskCompletionSource();
+            _subs.Add(_explorer.Devices.ObserveAdd().Take(1).Subscribe(kvp =>
+            {
+                _drone = kvp.Value.Value;
+                found.TrySetResult();
+            }));
+
+            await found.Task;
+            OnLogReceived?.Invoke("[시스템] 드론 장치 감지됨");
+
+            // 5. 드론 상태 준비 완료 대기
+            var ready = new TaskCompletionSource();
+            _subs.Add(_drone!.State.Subscribe(st =>
+            {
+                if (st == ClientDeviceState.Complete) ready.TrySetResult();
+            }));
+
+            await ready.Task;
+
+            // 6. 데이터 스트림 연결
+            HookTelemetry(_drone);
+            OnLogReceived?.Invoke("[MAV] 텔레메트리가 연결됨");
+            HookCommandAck(_drone);
+            // HookCustomMessages(_router); // YOLO 전용
+
+            CurrentState.IsConnected = true;
+            OnDataUpdated?.Invoke(CurrentState);
+            OnLogReceived?.Invoke("[시스템] 연결 및 초기화 완료");
         }
 
-        public void Stop()
+        public async Task StopAsync()
         {
+            _isMissionRunning = false;
+            _subs.Dispose();
             _cts?.Cancel();
-            _udpClient?.Close();
-            _udpClient = null;
+            _cts?.Dispose();
+            _cts = null;
+
+            if (_explorer is IAsyncDisposable ax1) await ax1.DisposeAsync();
+            _explorer = null;
+            if (_router is IAsyncDisposable ax2) await ax2.DisposeAsync();
+            _router = null;
+
+            _protocol = null;
+            _drone = null;
+
             CurrentState.IsConnected = false;
-        }
-
-        // 1초 간격으로 생존 신호를 송신.
-        private void StartHeartbeatLoop(CancellationToken token)
-        {
-            Task.Run(async () => {
-                while (!token.IsCancellationRequested)
-                {
-                    // 1. 전체 패킷 배열 준비 (헤더 10 + 페이로드 9 + CRC 2 = 21바이트)
-                    byte[] packet = new byte[21];
-
-                    // [헤더 조립]
-                    packet[0] = 0xFD;           // STX (v2 시작 마커)
-                    packet[1] = 9;              // Payload Length (하트비트는 9바이트)
-                    packet[2] = 0x00;           // Incompatibility Flags
-                    packet[3] = 0x00;           // Compatibility Flags
-                    packet[4] = _sequence++;    // Sequence Number
-                    packet[5] = 255;            // System ID (GCS는 보통 255)
-                    packet[6] = 1;              // Component ID
-                    packet[7] = 0;              // Message ID (Heartbeat = 0)
-                    packet[8] = 0x00;           // Message ID 확장
-                    packet[9] = 0x00;
-
-                    // [페이로드 조립 - 하트비트 전용 데이터 9바이트]
-                    // Offset 10: Custom Mode (4 bytes, GCS는 0으로 설정)
-                    BitConverter.GetBytes(0).CopyTo(packet, 10);
-
-                    packet[14] = 6;    // Type: MAV_TYPE_GCS (6)
-                    packet[15] = 8;    // Autopilot: MAV_AUTOPILOT_INVALID (8)
-                    packet[16] = 0;    // Base Mode
-                    packet[17] = 4;    // System Status: MAV_STATE_ACTIVE (4)
-                    packet[18] = 3;    // MAVLink Version (v2는 3으로 표기)
-
-                    // [3. 체크섬(CRC) 계산]
-                    // 하트비트(MSG ID 0)의 매직 넘버(CRC_EXTRA)는 50입니다.
-                    ushort crc = MavlinkCRC.CalculateCRC(packet, 1, packet.Length - 3);
-                    crc = MavlinkCRC.AccumulateCRC((byte)50, crc);
-
-                    BitConverter.GetBytes(crc).CopyTo(packet, packet.Length - 2);
-
-                    // [4. 실제 송신]
-                    await SendPacket(packet);
-
-                    await Task.Delay(1000); // 1초 주기로 반복
-                }
-            }, token);
+            OnDataUpdated?.Invoke(CurrentState);
+            OnLogReceived?.Invoke("[시스템] 연결 종료됨");
         }
         #endregion
 
-        #region [5. 데이터 수신 및 파싱 (Rx Logic)]
-        private async Task ReceiveData(CancellationToken token)
-        {
-            while (!token.IsCancellationRequested)
-            {
-                try
-                {
-                    var result = await _udpClient!.ReceiveAsync();
-                    byte[] buffer = result.Buffer;
 
-                    // MAVLink 프로토콜 버전 체크 (0xFD: v2, 0xFE: v1)
-                    if (buffer.Length > 0 && (buffer[0] == 0xFD || buffer[0] == 0xFE))
+        #region [5. 텔레메트리 핸들링 (Telemetry Hooks)]
+        private void HookTelemetry(IClientDevice drone)
+        {
+            OnLogReceived?.Invoke("[MAV] 센서 데이터(Telemetry) 스트림 연결 시작...");
+
+            // 1) 하트비트 (팀원의 도배 방지 로직 적용!)
+            drone.GetMicroservice<IHeartbeatClient>()?.RawHeartbeat
+                .Subscribe(_ =>
+                {
+                    // 나중에 연결 끊김 감지를 위해 시간 기록 (팀원 아이디어)
+                    // _lastHeartbeatUtc = DateTime.UtcNow; // (뷰모델에 변수가 있다면 주석 해제)
+
+                    if (!CurrentState.IsConnected)
                     {
-                        if (!CurrentState.IsConnected)
-                        {
-                            CurrentState.IsConnected = true;
-                            OnDataUpdated?.Invoke(CurrentState);
-                        }
-                        ParseMavlinkBinary(buffer);
+                        CurrentState.IsConnected = true;
+                        OnDataUpdated?.Invoke(CurrentState);
+                        OnLogReceived?.Invoke("[MAV] 드론 하트비트 수신 완료! (통신 100% 정상)");
                     }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[RX Error] {ex.Message}");
-                }
-            }
+                })
+                .AddTo(_subs);
+
+            // 2) 위치 정보 (GPS)
+            drone.GetMicroservice<IPositionClient>()?.GlobalPosition
+                .Subscribe(gp => {
+                    // 라이브러리가 이미 변환해 주므로 1e7 나누기 생략 (이상하면 1e7로 나누세요)
+                    CurrentState.Latitude = gp.Lat;
+                    CurrentState.Longitude = gp.Lon;
+                    CurrentState.Altitude = gp.Alt;
+                    OnDataUpdated?.Invoke(CurrentState);
+                }).AddTo(_subs);
+
+            // 3) HUD 정보 (속도)
+            drone.GetMicroservice<IPositionClient>()?.VfrHud
+                .Subscribe(vfr => {
+                    CurrentState.Speed = Math.Round(vfr.Groundspeed, 2);
+                    OnDataUpdated?.Invoke(CurrentState);
+                }).AddTo(_subs);
+
+            // 4) 배터리 정보
+            drone.GetMicroservice<ITelemetryClient>()?.Battery
+                .Subscribe(b => {
+                    CurrentState.BatteryPercent = b.BatteryRemaining;
+                    OnDataUpdated?.Invoke(CurrentState);
+                }).AddTo(_subs);
+
+            // 5) 기체 자세 (Roll, Pitch, Yaw)
+            _router!.OnRxMessage
+                    .OfType<IProtocolMessage, AttitudePacket>()
+                    .Subscribe(packet => {
+                        CurrentState.Roll = packet.Payload.Roll * (180.0 / Math.PI);
+                        CurrentState.Pitch = packet.Payload.Pitch * (180.0 / Math.PI);
+                        CurrentState.Heading = (packet.Payload.Yaw * (180.0 / Math.PI) + 360) % 360;
+
+                        OnDataUpdated?.Invoke(CurrentState);
+                    })
+                    .AddTo(_subs);
+
+            OnLogReceived?.Invoke("[MAV] 모든 데이터 스트림 파이프 연결 완료");
         }
 
-        private void ParseMavlinkBinary(byte[] packet)
+        private void HookCommandAck(IClientDevice drone)
         {
-            if (packet.Length < 10) 
-                return;
-            int msgId = packet[7]; // MAVLink v2 기준에서 메세지의 정체(ID)를 알려주는 숫자는 8번째 칸(index 7)에 들어있다.
+            var cmd = drone.GetMicroservice<ICommandClient>();
+            if (cmd == null) return;
 
-            switch (msgId)
+            // 수영님 스타일의 깔끔한 체이닝 적용
+            cmd.OnCommandAck.Subscribe(ack =>
             {
-                case MSG_ID_SYS_STATUS: // 배터리 잔량 업데이트
-                                                               // v2 기준 페이로드 시작(10) + 30바이트 부근에 battery_remaining(%) 위치
-                                                               // 정확한 오프셋은 MAVLink 라이브러리 규격을 따르지만, 여기선 예시로 처리
-                    CurrentState.BatteryPercent = packet[10 + 30];
-                    break;
-
-                case MSG_ID_VFR_HUD: // 속도 데이터 업데이트
-                                                          // groundspeed는 페이로드 시작(10) 후 4바이트(float) 지점에 위치
-                    float groundSpeed = BitConverter.ToSingle(packet, 10 + 4);
-                    CurrentState.Speed = Math.Round(groundSpeed, 2);
-                    break;
-                case MSG_ID_HEARTBEAT:
-                    CurrentState.IsConnected = true;
-                    break;
-                case MSG_ID_GLOBAL_POSITION_INT:
-                    UpdateDroneLocation(packet);
-                    break;
-                case MSG_ID_YOLO_TARGET:
-                    UpdateYoloTargets(packet);
-                    break;
-                case 77: // MSG_ID_COMMAND_ACK
-                    int result = packet[15]; // 0이면 성공, 나머지는 에러 코드
-                    string msg = (result == 0) ? "[시스템] 명령 수행 성공" : $"[경고] 명령 거부됨 (코드: {result})";
-
-                    // ChatLog 대신 이벤트를 발생시킵니다!
-                    OnLogReceived?.Invoke(msg);
-                    break;
-            }
-            OnDataUpdated?.Invoke(CurrentState);
-        }
-
-        private void UpdateDroneLocation(byte[] packet)
-        {
-            // degE7 단위를 소수점 좌표로 변환
-            CurrentState.Latitude = BitConverter.ToInt32(packet, 10) / 1E7;
-            CurrentState.Longitude = BitConverter.ToInt32(packet, 14) / 1E7;
-            CurrentState.Altitude = BitConverter.ToInt32(packet, 22) / 1000.0;
-        }
-
-        private void UpdateYoloTargets(byte[] packet)
-        {
-            int id = packet[10];
-            double lat = BitConverter.ToInt32(packet, 11) / 1E7;
-            double lng = BitConverter.ToInt32(packet, 15) / 1E7;
-            string targetType = "Person";
-
-            System.Windows.Application.Current.Dispatcher.Invoke(() =>
-            {
-                var target = DetectedTargets.FirstOrDefault(t => t.ID == id);
-                bool isTracked = false;
-
-                if (target != null)
+                // 1. MAVLink 명령 번호를 알기 쉬운 한글로 번역 (자주 쓰는 것만)
+                string commandName = ack.Command switch
                 {
-                    target.Lat = lat;
-                    target.Lng = lng;
-                    isTracked = target.IsBeingTracked;
+                    MavCmd.MavCmdNavTakeoff => "이륙 (Takeoff)",
+                    MavCmd.MavCmdNavReturnToLaunch => "복귀 (RTL)",
+                    MavCmd.MavCmdNavLand => "착륙 (Land)",
+                    MavCmd.MavCmdNavWaypoint => "목적지 이동",
+                    _ => $"명령 번호 {ack.Command}" // 모르는 건 번호로 출력
+                };
+
+                // 2. MAVLink 결과를 명확한 상태 메시지와 아이콘으로 번역
+                string resultText = ack.Result switch
+                {
+                    MavResult.MavResultAccepted => " 수락 및 실행됨",
+                    MavResult.MavResultTemporarilyRejected => " 일시적 거절 (드론 바쁨)",
+                    MavResult.MavResultDenied => " 거절됨 (조건 불만족)",
+                    MavResult.MavResultUnsupported => " 지원하지 않는 명령",
+                    MavResult.MavResultFailed => " 실행 실패",
+                    _ => $"알 수 없음 ({ack.Result})"
+                };
+
+                // 3. 성공과 실패를 구분해서 로그 띄우기 (실패하면 [경고] 태그!)
+                if (ack.Result == MavResult.MavResultAccepted)
+                {
+                    OnLogReceived?.Invoke($"[명령 응답] {commandName} -> {resultText}");
                 }
                 else
                 {
-                    DetectedTargets.Add(new DetectedTarget { ID = id, Lat = lat, Lng = lng, TargetType = targetType });
-                    System.Diagnostics.Debug.WriteLine($"[YOLO] 새 객체 탐지: ID {id}");
+                    OnLogReceived?.Invoke($"[명령 경고] {commandName} 실패 사유: {resultText}");
                 }
-                OnTargetLocationUpdated?.Invoke(id, lat, lng, targetType, isTracked);
-            });
+
+            }).AddTo(_subs); // 잊지 않고 바구니에 담기!
         }
+
+        // 아래 주석 친 부분이 yolo로 객체 탐지하여 마브링크 프로토콜로 받아 파싱하기 위한 로직임.
+        /*private void HookCustomMessages(IProtocolRouter router)
+        {
+            // YOLO 타겟 메시지 (ID 250)
+            router.OnRxMessage
+                .OfType<IProtocolMessage, MavlinkMessage>()
+                .Where(m => m.Id == 250)
+                .Subscribe(m =>
+                {
+                    // 1. IPayload 상자를 가져옵니다.
+                    var payload = m.GetPayload();
+
+                    // 2. 상자의 크기만큼 빈 바이트 바구니(버퍼)를 준비합니다.
+                    byte[] buffer = new byte[payload.GetMaxByteSize()];
+                    var span = new Span<byte>(buffer);
+
+                    // 3. 상자 안의 내용물(순수 바이트 데이터)을 바구니에 쏟아 붓습니다!
+                    payload.Serialize(ref span);
+
+                    // 4. 이제 완벽한 바이트 배열이 된 buffer를 파싱 메서드에 넘깁니다.
+                    // (byte[]는 자동으로 ReadOnlySpan<byte>로 변환되어 찰떡같이 들어갑니다)
+                    ParseYoloPacket(buffer);
+                })
+                .AddTo(_subs);
+        }
+
+        private void ParseYoloPacket(ReadOnlySpan<byte> data)
+        {
+            // 1단계 안전장치: 데이터 길이 검사 (방어적 프로그래밍)
+            // ID(1) + Lat(4) + Lng(4) = 최소 9바이트가 필요합니다.
+            // 통신 불량으로 5바이트만 왔는데 자르려고 하면 프로그램이 그 자리에서 뻗어버립니다(Crash).
+            if (data.Length < 9)
+            {
+                OnLogReceived?.Invoke($"[경고] 잘못된 YOLO 패킷 수신 (길이: {data.Length})");
+                return; // 데이터가 잘렸으면 과감하게 버립니다.
+            }
+
+            int id = data[0];
+
+            // 2단계 안전장치: 네트워크 바이트 순서(Endian) 명시
+            // BitConverter 대신 BinaryPrimitives를 사용하여 무조건 '리틀 엔디안'으로 읽도록 강제합니다.
+            double lat = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(1, 4)) / 1E7;
+            double lng = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(5, 4)) / 1E7;
+
+            // 3단계 안전장치: UI 스레드 멈춤 방지 (BeginInvoke)
+            // Invoke는 UI 업데이트가 끝날 때까지 통신 수신을 멈추고 기다립니다.
+            // 통신이 1초에 수십 번씩 올 때는 BeginInvoke(비동기)를 써야 GCS 화면이 뚝뚝 끊기지 않습니다.
+            Application.Current.Dispatcher.BeginInvoke(() => {
+                var target = DetectedTargets.FirstOrDefault(t => t.ID == id);
+                bool isTracked = target?.IsBeingTracked ?? false;
+
+                if (target != null)
+                {
+                    target.Lat = lat; target.Lng = lng;
+                }
+                else
+                {
+                    DetectedTargets.Add(new DetectedTarget { ID = id, Lat = lat, Lng = lng, TargetType = "Person" });
+                }
+                OnTargetLocationUpdated?.Invoke(id, lat, lng, "Person", isTracked);
+            });
+        }*/
         #endregion
 
-        #region [6. 명령 송신 로직 (Tx Logic)]
 
-        // 조립이 완료된 바이너리 데이터(byte[])를 UDP 프로토콜을 이용해 실제 우분투 IP 주소로 보내줌
-        private async Task SendPacket(byte[] packet)
+        #region [6. 비행 명령 제어 (Flight Commands)]
+        /// <summary>
+        /// 지정된 고도로 이륙 명령(Takeoff)을 전송합니다.
+        /// </summary>
+        /// <param name="altitude">목표 이륙 고도 (미터)</param>
+        public async Task Takeoff(float altitude)
         {
-            if (_udpClient != null)
+            // 1. 안전장치: 드론 객체와 명령 부서가 정상인지 확인
+            if (_drone == null)
             {
-                try { await _udpClient.SendAsync(packet, packet.Length, DroneIp, Port); }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[TX Error] {ex.Message}"); }
+                OnLogReceived?.Invoke(" [경고] 기체가 연결되지 않아 이륙할 수 없습니다.");
+                return;
+            }
+
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null) return;
+
+            // 2. 명령 전송 및 에러 방어막 (try-catch)
+            try
+            {
+                OnLogReceived?.Invoke($" [명령] 이륙 시도 (목표 고도: {altitude}m)...");
+
+                // Param 7 자리에 목표 고도(altitude)를 넣어서 전송!
+                await cmd.CommandLong(MavCmd.MavCmdNavTakeoff, 0, 0, 0, 0, 0, 0, altitude);
+            }
+            catch (Exception ex)
+            {
+                // 통신 지연이나 에러 발생 시 프로그램이 안 튕기도록 조용히 로그만 출력
+                OnLogReceived?.Invoke($" [오류] 이륙 명령 전송 실패: {ex.Message}");
             }
         }
 
-        // 명령어를 MAVLink 규격 봉투에 담는 공장
-        public async Task SendMavlinkCommand(int commandId, float param1)
-        {
-            // MAVLink v2 COMMAND_LONG (#76) 구조 조립
-            // 헤더(9) + 페이로드(33) + 체크섬(2) = 총 44바이트
-            byte payloadSize = 33;
-            byte[] packet = new byte[payloadSize + 12]; // v2 헤더 10바이트 + 페이로드 + CRC 2바이트
-
-            // 1. 헤더 조립 (MAVLink v2)
-            packet[0] = 0xFD;           // STX (v2 시작 마커)
-            packet[1] = payloadSize;    // 페이로드 길이
-            packet[2] = 0x00;           // 호환성 플래그
-            packet[3] = 0x00;           // 비호환성 플래그
-            packet[4] = _sequence++;    // 시퀀스 번호
-            packet[5] = 255;            // GCS 시스템 ID (보통 255)
-            packet[6] = 1;              // GCS 컴포넌트 ID
-            packet[7] = 76;             // 메시지 ID (COMMAND_LONG = 76)
-            packet[8] = 0x00;           // 메시지 ID 확장
-            packet[9] = 0x00;           // 메시지 ID 확장
-
-            // 2. 페이로드 조립 (COMMAND_LONG)
-            // param1 (4), param2~7 (24), command(2), target_sys(1), target_comp(1), confirmation(1)
-            Array.Copy(BitConverter.GetBytes(param1), 0, packet, 10, 4);    // Param1
-                                                                                                                     // param2 ~ param7 은 0으로 채움 (대부분의 기본 명령에서 0 사용)
-            BitConverter.GetBytes((ushort)commandId).CopyTo(packet, 38);   // Command ID (예: 22=Takeoff)
-            packet[40] = 1;             // Target System ID (드론 ID)
-            packet[41] = 1;             // Target Component ID
-            packet[42] = 0;             // Confirmation (0: 첫 전송)
-
-            // 3. 체크섬(CRC) 계산
-            // MAVLink는 메시지마다 고유의 CRC_EXTRA 값을 더해야 합니다. (COMMAND_LONG은 152)
-            ushort crc = MavlinkCRC.CalculateCRC(packet, 1, packet.Length - 3);
-            crc = MavlinkCRC.AccumulateCRC((byte)152, crc); // COMMAND_LONG 전용 매직 넘버
-
-            BitConverter.GetBytes(crc).CopyTo(packet, packet.Length - 2);
-
-            // 4. 진짜 전송!
-            await SendPacket(packet);
-            System.Diagnostics.Debug.WriteLine($"[TX] 진짜 패킷 전송됨: CMD {commandId}, Val {param1}");
-        }
-
-        // 이륙 명령 보냄
-        public async Task Takeoff(string altitude)
-        {
-            if (float.TryParse(altitude, out float altValue))
-            {
-                await SetFlightMode("GUIDED");
-                await SendMavlinkCommand(22, altValue); // MAV_CMD_NAV_TAKEOFF
-            }
-        }
-
-        // 착륙 명령 보냄
+        /// <summary>
+        /// 현재 위치에서 즉시 착륙 명령(Land)을 전송합니다.
+        /// </summary>
         public async Task Landing()
         {
-            // SendMavlinkCommand 호출 시 await를 사용합니다.
-            await SendMavlinkCommand(21, 0);
+            // 1. 안전장치: 널 포인터 폭발(Crash)을 막기 위해 꼼꼼하게 체크
+            if (_drone == null)
+            {
+                OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 착륙 명령을 내릴 수 없습니다.");
+                return;
+            }
+
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null) return;
+
+            // 2. 명령 전송 및 에러 방어막
+            try
+            {
+                OnLogReceived?.Invoke("[명령] 착륙 시도...");
+
+                // 착륙은 특별한 파라미터 없이 전부 0으로 채워서 보냄
+                await cmd.CommandLong(MavCmd.MavCmdNavLand, 0, 0, 0, 0, 0, 0, 0);
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] 착륙 명령 전송 실패: {ex.Message}");
+            }
         }
 
-        // 드론의 비행 모드 변경
-        public async Task SetFlightMode(string modeName)
+        /// <summary>
+        /// 기체를 이륙했던 위치(Home)로 되돌아오게 하는 복귀 명령(RTL)을 전송합니다.
+        /// </summary>
+        public async Task Rtl()
         {
-            // MAV_CMD_DO_SET_MODE (176) 명령을 사용하여 모드 변경
-            System.Diagnostics.Debug.WriteLine($"[TX] 비행 모드 변경 요청: {modeName}");
+            // 1. 안전장치: 조종사가 버튼을 눌렀는데 드론이 없으면 '침묵'하지 않고 이유를 알려줌!
+            if (_drone == null)
+            {
+                OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 복귀(RTL) 명령을 내릴 수 없습니다.");
+                return;
+            }
 
-            // SendMavlinkCommand 호출 시 await를 사용합니다.
-            await SendMavlinkCommand(176, 1.0f);
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null) return;
+
+            // 2. 명령 전송 및 에러 방어막
+            try
+            {
+                OnLogReceived?.Invoke("[명령] 드론 복귀(RTL) 시도 중...");
+
+                // 20번 = MavCmdNavReturnToLaunch (RTL), 파라미터는 모두 0
+                await cmd.CommandLong(MavCmd.MavCmdNavReturnToLaunch, 0, 0, 0, 0, 0, 0, 0);
+            }
+            catch (Exception ex)
+            {
+                // 전파가 끊기거나 명령이 씹혀도 프로그램이 죽지 않도록 방어!
+                OnLogReceived?.Invoke($"[오류] 복귀(RTL) 명령 전송 실패: {ex.Message}");
+            }
         }
 
-        // 실시간으로 추적할 드론이 움직이는 좌표를 보내줌
-        public async Task SendTrackCoordinate(double lat, double lng, float alt = 5.0f)
+        public async Task SetFlightMode(MavMode mode, uint customMode)
         {
-            // MAVLink v2 SET_POSITION_TARGET_GLOBAL_INT (#113)
-            // 헤더(10) + 페이로드(53) + 체크섬(2) = 총 65바이트
-            byte payloadSize = 53;
-            byte[] packet = new byte[payloadSize + 12];
+            // 1. 추상 클래스 대신 '완성된 패킷 클래스'를 사용합니다!
+            var packet = new SetModePacket();
 
-            // 1. 헤더 조립
-            packet[0] = 0xFD;           // STX
-            packet[1] = payloadSize;    // Payload Length
-            packet[2] = 0x00;           // Incompatibility Flags
-            packet[3] = 0x00;           // Compatibility Flags
-            packet[4] = _sequence++;    // Packet Sequence
-            packet[5] = 255;            // System ID (GCS)
-            packet[6] = 1;              // Component ID
-            packet[7] = 113;            // Message ID (113)
-            packet[8] = 0x00;
-            packet[9] = 0x00;
+            // 2. 보내는 사람(GCS)의 정보를 봉투 겉면에 적습니다.
+            packet.SystemId = (byte)GcsSystemId;
+            packet.ComponentId = (byte)GcsComponentId;
 
-            // 2. 페이로드 조립 (Byte Offset 기준)
-            // [0-3] time_boot_ms (보통 0)
-            // [4] coordinate_frame (5 = MAV_FRAME_GLOBAL_INT)
-            // [5-6] type_mask (어떤 데이터를 무시할지 결정. 위치만 사용시 0x0DF8)
-            // [7-10] lat_int (degE7)
-            // [11-14] lon_int (degE7)
-            // [15-18] alt (float, meters)
+            // 3. 내용물(Payload)을 채웁니다.
+            packet.Payload.BaseMode = mode;
+            packet.Payload.CustomMode = customMode;
+            packet.Payload.TargetSystem = 1;
 
-            packet[14] = 5; // MAV_FRAME_GLOBAL_INT (Offset 10+4)
-
-            // type_mask: 0x0DF8 (위치 정보만 사용하고 속도/가속도/요 비트는 무시하겠다는 설정)
-            ushort type_mask = 3576;
-            BitConverter.GetBytes(type_mask).CopyTo(packet, 15);
-
-            // 좌표 변환 (수영님의 핵심 로직)
-            int latE7 = (int)(lat * 1E7);
-            int lngE7 = (int)(lng * 1E7);
-
-            BitConverter.GetBytes(latE7).CopyTo(packet, 17); // Lat (Offset 10+7)
-            BitConverter.GetBytes(lngE7).CopyTo(packet, 21); // Lng (Offset 10+11)
-            BitConverter.GetBytes(alt).CopyTo(packet, 25);   // Alt (Offset 10+15)
-
-            // 3. 체크섬(CRC) 계산
-            // 113번 메시지의 CRC_EXTRA 값은 33입니다.
-            ushort crc = MavlinkCRC.CalculateCRC(packet, 1, packet.Length - 3);
-            crc = MavlinkCRC.AccumulateCRC((byte)33, crc);
-
-            BitConverter.GetBytes(crc).CopyTo(packet, packet.Length - 2);
-
-            // 4. 전송
-            await SendPacket(packet);
-            System.Diagnostics.Debug.WriteLine($"[TRACK TX] 실시간 좌표 송신: {lat:F6}, {lng:F6}");
+            // 4. 완벽하게 2개의 인수(메시지, 토큰)만 사용해서 보냅니다.
+            await _router!.Send(packet, _cts!.Token);
         }
 
-        // GCS에서 어떤 타켓을 추적할지 결정하고 우분투한테 명령 보냄
-        public async void SendFollowCommand(int targetId)
+        /*// Yolo로 객체 추적 로직
+        public async Task GoTo(double lat, double lng, float alt = 5.0f)
         {
-            // 추적 상태 UI 업데이트
-            foreach (var t in DetectedTargets) t.IsBeingTracked = (t.ID == targetId);
+            // 1. 완성된 패킷 클래스 생성
+            var packet = new SetPositionTargetGlobalIntPacket();
 
-            // 커스텀 메시지 ID 251 조립 (간단하게 1바이트 ID만 전송)
-            byte payloadSize = 1;
-            byte[] packet = new byte[payloadSize + 12];
+            // 2. 헤더 정보(Identity) 설정
+            packet.SystemId = (byte)GcsSystemId;
+            packet.ComponentId = (byte)GcsComponentId;
 
-            packet[0] = 0xFD;
-            packet[1] = payloadSize;
-            packet[4] = _sequence++;
-            packet[5] = 255;
-            packet[6] = 1;
-            packet[7] = 251; // Custom ID
+            // 3. 페이로드 설정
+            packet.Payload.LatInt = (int)(lat * 1E7);
+            packet.Payload.LonInt = (int)(lng * 1E7);
+            packet.Payload.Alt = alt;
+            packet.Payload.CoordinateFrame = MavFrame.MavFrameGlobalRelativeAltInt;
+            packet.Payload.TypeMask = (PositionTargetTypemask)3576;
+            packet.Payload.TargetSystem = 1;
+            packet.Payload.TargetComponent = 1;
 
-            packet[10] = (byte)targetId; // 페이로드에 타겟 ID 삽입
-
-            // 임의의 커스텀 메시지이므로 CRC_EXTRA는 보통 0이나 약속된 값을 사용 (여기선 0 예시)
-            ushort crc = MavlinkCRC.CalculateCRC(packet, 1, packet.Length - 3);
-            BitConverter.GetBytes(crc).CopyTo(packet, packet.Length - 2);
-
-            await SendPacket(packet);
-            OnLogReceived?.Invoke($"[명령] ID {targetId} 추적 시작 패킷 송신");
-        }
+            // 4. 전송 (인수 2개로 완벽하게 일치!)
+            await _router!.Send(packet, _cts!.Token);
+        }*/
         #endregion
 
-
-        #region [7. 웨이포인트 관리 (Waypoint Management)]
+        #region [7. 미션 로직 (Mission & Waypoints)]
+        // 웨이포인트 추가
         public void AddWaypoint(double lat, double lng)
         {
             _waypoints.Add(new GeoPoint { Lat = lat, Lng = lng });
             OnWaypointCountChanged?.Invoke(_waypoints.Count);
         }
 
+        // 마지막 웨이포인트 삭제
         public void UndoWaypoint()
         {
             if (_waypoints.Count > 0)
             {
+                // 리스트의 맨 마지막 요소(가장 최근에 찍은 점)를 제거합니다.
                 _waypoints.RemoveAt(_waypoints.Count - 1);
+
+                // UI 화면에 웨이포인트 개수가 줄어들었다고 알려줍니다.
                 OnWaypointCountChanged?.Invoke(_waypoints.Count);
+                OnLogReceived?.Invoke($"[미션] 마지막 웨이포인트를 취소했습니다. (남은 개수: {_waypoints.Count})");
+            }
+            else
+            {
+                OnLogReceived?.Invoke("[경고] 취소할 웨이포인트가 없습니다.");
             }
         }
 
+        // 모든 웨이포인트 싹 다 지우기
         public void ClearWaypoints()
         {
-            _waypoints.Clear();
-            OnWaypointCountChanged?.Invoke(0);
+            if (_waypoints.Count > 0)
+            {
+                // 리스트를 완전히 비웁니다.
+                _waypoints.Clear();
+
+                // UI 화면에 개수가 0이 되었다고 알려줍니다.
+                OnWaypointCountChanged?.Invoke(0);
+                OnLogReceived?.Invoke("[미션] 모든 웨이포인트를 삭제했습니다.");
+            }
         }
 
+        // 미션 시작 메서드.
         public void StartMission()
         {
-            if (_isMissionRunning) 
-                return;
+            if (_isMissionRunning || _waypoints.Count == 0) return;
             _isMissionRunning = true;
-            
 
-            // 미션 수행 루프 시작
             Task.Run(async () => {
-
-                await SetFlightMode("GUIDED");
+                OnLogReceived?.Invoke("[미션] 웨이포인트 임무 시작");
+                
+                await SetFlightMode((MavMode)1, 4);
 
                 while (_isMissionRunning && _waypoints.Count > 0)
                 {
-                    var targetWP = _waypoints[0]; // 맨 앞의 목표 지점
+                    var target = _waypoints[0];
+                    await GoTo(target.Lat, target.Lng);
 
-                    // 드론에게 이동 명령 전송
-                    await SendTrackCoordinate(targetWP.Lat, targetWP.Lng);
-
-                    // 드론이 목표 지점 근처에 도착했는지 체크하는 로직 (단순 거리 계산)
-                    if (IsReached(targetWP))
+                    if (IsReached(target))
                     {
-                        _waypoints.RemoveAt(0); // 도착했으면 리스트에서 제거
+                        _waypoints.RemoveAt(0);
                         OnWaypointCountChanged?.Invoke(_waypoints.Count);
+                        OnLogReceived?.Invoke($"[미션] 지점 도달. 남은 지점: {_waypoints.Count}");
                     }
-
-                    await Task.Delay(1000); // 1초마다 체크
+                    await Task.Delay(1000);
                 }
                 _isMissionRunning = false;
                 OnMissionCompleted?.Invoke();
+                OnLogReceived?.Invoke("[미션] 모든 임무 완료");
             });
         }
 
         private bool IsReached(GeoPoint target)
         {
-            // 현재 드론 위치와 목표 지점 사이의 거리를 계산 (간단한 예시)
-            double dist = Math.Sqrt(Math.Pow(CurrentState.Latitude - target.Lat, 2) +
-                                    Math.Pow(CurrentState.Longitude - target.Lng, 2));
-            return dist < 0.0001; // 약 10m 이내면 도착으로 판정
+            double dist = Math.Sqrt(Math.Pow(CurrentState.Latitude - target.Lat, 2) + Math.Pow(CurrentState.Longitude - target.Lng, 2));
+            return dist < 0.0001; // 약 10m 내외
         }
+
+        
+
+        /*public async Task StopTracking()
+        {
+            // 아두파일럿 기준 CustomMode 5번이 'LOITER(가만히 떠 있기)' 모드입니다.
+            await SetFlightMode((MavMode)1, 5);
+            OnLogReceived?.Invoke("[명령] 추적 중지 및 제자리 정지(LOITER) 모드 전환");
+        }*/
+
         public void StopMission() => _isMissionRunning = false;
+        #endregion
+
+        #region [8. 자원 해제 (Dispose)]
+        public async ValueTask DisposeAsync() => await StopAsync();
         #endregion
     }
 }
