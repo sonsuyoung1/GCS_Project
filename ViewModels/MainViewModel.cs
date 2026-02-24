@@ -27,7 +27,7 @@ namespace GCS_Project.ViewModels
         public double HeadingOffset => -Drone.Heading;
 
         // MavlinkService의 리스트를 직접 참조하도록 변경하여 메모리 중복 방지
-        public ObservableCollection<DetectedTarget> DetectedTargets => _mavlinkService.DetectedTargets;
+        // public ObservableCollection<DetectedTarget> DetectedTargets => _mavlinkService.DetectedTargets;
 
         public string FlightMode
         {
@@ -74,23 +74,29 @@ namespace GCS_Project.ViewModels
         public bool IsMissionStartEnabled => FlightMode == "TAKEOFF" && _currentWaypointCount > 0;
         public bool IsTakeoffEnabled => FlightMode == "READY" || FlightMode == "IDLE";
         public bool IsLandingEnabled => FlightMode == "TAKEOFF" && FlightMode != "MISSION";
+        public bool IsRtlEnabled => FlightMode == "TAKEOFF" || FlightMode == "MISSION" || FlightMode == "TRACKING";
         public bool IsUndoEnabled => (FlightMode == "IDLE" || FlightMode == "TAKEOFF") && _currentWaypointCount > 0 && FlightMode != "MISSION";
         public bool IsClearEnabled => (FlightMode == "IDLE" || FlightMode == "TAKEOFF") && _currentWaypointCount > 0 && FlightMode != "MISSION";
         public bool IsFollowEnabled => SelectedTarget != null && FlightMode != "LANDING" && FlightMode != "TRACKING";
         public bool IsStopEnabled => FlightMode == "MISSION" || FlightMode == "TRACKING";
-        public bool IsRtlEnabled => FlightMode == "TAKEOFF" || FlightMode == "MISSION" || FlightMode == "TRACKING";
+        public bool IsArmEnabled => (FlightMode == "IDLE" || FlightMode == "READY"); // && !_mavlinkService.CurrentState.IsArmed;
+        public bool IsDisarmEnabled => (FlightMode == "IDLE" || FlightMode == "READY"); // && _mavlinkService.CurrentState.IsArmed;
+
         #endregion
 
         #region [3. 커맨드 (Commands)]
         public ICommand StartMissionCommand { get; }
         public ICommand StopMissionCommand { get; }
+        public ICommand ArmCommand { get; }
+        public ICommand DisarmCommand { get; }
         public ICommand TakeoffCommand { get; }
         public ICommand LandingCommand { get; }
+        public ICommand RtlCommand { get; }
         public ICommand UndoWaypointCommand { get; }
         public ICommand ClearWaypointsCommand { get; }
         public ICommand FollowCommand { get; }
-        public ICommand StopTrackingCommand { get; }
-        public ICommand RtlCommand { get; }
+        // public ICommand StopTrackingCommand { get; }
+
         #endregion
 
         #region [4. 이벤트 (View 통신용)]
@@ -107,15 +113,17 @@ namespace GCS_Project.ViewModels
             _mavlinkService = new MavlinkService();
 
             // 커맨드 초기화 (로직 분리)
-            TakeoffCommand = new RelayCommand(ExecuteTakeoff, () => IsTakeoffEnabled);
             StartMissionCommand = new RelayCommand(ExecuteStartMission, () => IsMissionStartEnabled);
+            ArmCommand = new RelayCommand(ExecuteArm, () => IsArmEnabled);
+            DisarmCommand = new RelayCommand(ExecuteDisarm, () => IsDisarmEnabled);
+            TakeoffCommand = new RelayCommand(ExecuteTakeoff, () => IsTakeoffEnabled);
             LandingCommand = new RelayCommand(ExecuteLanding, () => IsLandingEnabled);
+            RtlCommand = new RelayCommand(ExecuteRtl, () => IsRtlEnabled);
             UndoWaypointCommand = new RelayCommand(ExecuteUndoWaypoint, () => IsUndoEnabled);
             ClearWaypointsCommand = new RelayCommand(ExecuteClearWaypoints, () => IsClearEnabled);
             FollowCommand = new RelayCommand(ExecuteFollow, () => IsFollowEnabled);
             StopMissionCommand = new RelayCommand(ExecuteStopMission, () => IsStopEnabled);
-            StopTrackingCommand = new RelayCommand(ExecuteStopTracking, () => IsStopEnabled);
-            RtlCommand = new RelayCommand(ExecuteRtl, () => IsRtlEnabled);
+            // StopTrackingCommand = new RelayCommand(ExecuteStopTracking, () => IsStopEnabled);
 
 
             _targetLostTimer = new System.Timers.Timer(3000); // 3초 동안 데이터 없으면 소실 판단
@@ -146,8 +154,8 @@ namespace GCS_Project.ViewModels
                 Application.Current.Dispatcher.BeginInvoke(() => HandleDroneData(state));
             };
 
-            /*// 타겟 업데이트
-            _mavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
+            // 타겟 업데이트
+            /*_mavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(async () =>
                 {
@@ -268,6 +276,38 @@ namespace GCS_Project.ViewModels
             }
         }
 
+        // 시동걸기
+        private async void ExecuteArm()
+        {
+            try
+            {
+                await _mavlinkService.SendArmAsync();
+                // 드론이 실제로 시동이 걸리면 상태가 업데이트되겠지만, 일단 명령 전송 로그를 띄웁니다.
+                ChatLog += "\n[명령] 시동(Arm) 명령 전송 완료";
+
+            }
+            catch (Exception ex)
+            {
+                ChatLog += $"\n[오류] 시동 명령 실패: {ex.Message}";
+            }
+        }
+
+        // 시동 끄기
+        private async void ExecuteDisarm()
+        {
+            try
+            {
+                await _mavlinkService.SendDisarmAsync();
+                ChatLog += "\n[명령] 시동 끄기(Disarm) 명령 전송 완료";
+
+                // (DisarmCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+            catch (Exception ex)
+            {
+                ChatLog += $"\n[오류] 시동 끄기 명령 실패: {ex.Message}";
+            }
+        }
+
         // 3. 이륙 (Takeoff는 원래 비동기(Task) 메서드이므로 바로 await)
         private async void ExecuteTakeoff()
         {
@@ -336,7 +376,7 @@ namespace GCS_Project.ViewModels
         }
 
         // 7. 객체 추적 실행
-        /*private async void ExecuteFollow()
+        private async void ExecuteFollow()
         {
             try
             {
@@ -352,7 +392,7 @@ namespace GCS_Project.ViewModels
             {
                 ChatLog += $"\n[오류] 타겟 추적 실패: {ex.Message}";
             }
-        }*/
+        }
 
         // 8. 복귀 (RTL)
         private async void ExecuteRtl()
@@ -369,7 +409,7 @@ namespace GCS_Project.ViewModels
         }
 
         // 9. 객체 추적 중단
-        private async void ExecuteStopTracking()
+        /*private async void ExecuteStopTracking()
         {
             try
             {
@@ -383,7 +423,7 @@ namespace GCS_Project.ViewModels
             {
                 ChatLog += $"\n[오류] 추적 중단 실패: {ex.Message}";
             }
-        }
+        }*/
 
         // 10. 지도에서 웨이포인트 추가
         public async void AddWaypointFromMap(double lat, double lng)
@@ -399,7 +439,6 @@ namespace GCS_Project.ViewModels
             }
         }
         #endregion
-
 
         private void NotifyCommandStates()
         {
