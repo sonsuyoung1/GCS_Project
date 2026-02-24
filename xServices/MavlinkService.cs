@@ -1,4 +1,5 @@
 ﻿using Asv.Cfg;
+using Asv.Common;
 using Asv.IO;
 using Asv.Mavlink;
 using Asv.Mavlink.Common;
@@ -9,6 +10,8 @@ using R3;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Net;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,13 +19,13 @@ namespace GCS_Project.xServices
 {
     public class MavlinkService : IAsyncDisposable
     {
-        private readonly List<GeoPoint> _waypoints = new();
+        private readonly List<GCS_Project.Models.GeoPoint> _waypoints = new();
         private bool _isMissionRunning;
 
         private CancellationTokenSource? _cts;
 
-        private bool _txProbeDumped = false; // 나중에 지워라
-
+        private CoreServices? _gcsCore;
+        private HeartbeatServer? _gcsHbServer;
         // v4 core
         private IProtocolFactory? _protocol;
         private IProtocolRouter? _router;
@@ -32,7 +35,6 @@ namespace GCS_Project.xServices
         private readonly CompositeDisposable _subs = new();
         private DateTime _lastHeartbeatUtc = DateTime.MinValue;
         private Task? _linkWatchdogTask;
-        private Task? _gcsHeartbeatTask;
 
         public DroneState CurrentState { get; } = new DroneState();
         public ObservableCollection<DetectedTarget> DetectedTargets { get; } = new ObservableCollection<DetectedTarget>();
@@ -57,6 +59,8 @@ namespace GCS_Project.xServices
             });
             OnLogReceived?.Invoke("[MAV] Protocol created");
 
+            //StartGcsHeartbeat_ByDoc() //잠시 주석;
+
             _router = _protocol.CreateRouter("GCS_ROUTER");
             OnLogReceived?.Invoke("[MAV] Router created");
 
@@ -66,18 +70,27 @@ namespace GCS_Project.xServices
             OnLogReceived?.Invoke($"[MAV] UDP listen {listenHost}:{listenPort}");
 
             // 2) GCS → PX4 (Command 송신)
-            AddUdpOutPort(_router, "192.168.0.6", 14551);
-            
+            //AddUdpOutPort(_router, "192.168.0.6", 14551);
+
+            // GCS -> PX4 송신 소켓 (local ephemeral port)
+/*            _px4Ep = new IPEndPoint(IPAddress.Parse("192.168.0.6"), 14551);
+            _gcsTx = new UdpClient();                 // OS가 임의 local port 할당
+            _gcsTx.Connect(_px4Ep);*/
+
 
             // 2) GCS → PX4 (송신)  ★ 이 줄 추가
-            /*AddUdpOutPort(_router, "192.168.0.6", 14551);
-            OnLogReceived?.Invoke("[MAV] UDP out 192.168.0.6:14551 added");*/
+            AddUdpOutPort(_router, "192.168.0.6", 14551);
+            OnLogReceived?.Invoke("[MAV] UDP out 192.168.0.6:14551 added");
 
             // 추가 02/23
             //await UdpOutSmokeTestAsync("192.168.0.6", 14551);
 
+            OnLogReceived?.Invoke($"[MAV] RouterType={_router.GetType().FullName}"); //지워라
+
             var seq = new PacketSequenceCalculator();
-            var identity = new MavlinkIdentity(255, 255);
+            var identity = new MavlinkIdentity(255, 190);
+
+
 
             _explorer = DeviceExplorer.Create(_router, b =>
             {
@@ -116,20 +129,15 @@ namespace GCS_Project.xServices
             }));
             OnLogReceived?.Invoke("[MAV] Waiting device(ready)...");
             await ready.Task;
-
+            
             HookTelemetry(_drone);
             OnLogReceived?.Invoke("[MAV] Telemetry hooked");
 
             HookCommandAck(_drone);
 
-            // GCS Heartbeat microservice 활성화
-            var hb = _drone.GetMicroservice<IHeartbeatClient>();
-
             StartLinkWatchdog();
 
             OnLogReceived?.Invoke("[MAV] 장치 연결됨 (device ready)");
-
-            //await SendDisarmAsync();
         }
 
         private static void AddUdpListenPort(IProtocolRouter router, string host, int port)
@@ -147,7 +155,7 @@ namespace GCS_Project.xServices
 
             });
         }
-
+        
         private static void AddUdpOutPort(IProtocolRouter router, string host, int port)
         {
             router.AddUdpPort(p =>
@@ -159,6 +167,43 @@ namespace GCS_Project.xServices
                 p.Name = "udp_out";
             });
         }
+
+        /*private void StartGcsHeartbeat_ByDoc()
+        {
+            // 문서에 나온 정석 예시: CreateVirtualConnection 사용
+            var link = _protocol!.CreateVirtualConnection();
+
+            var serverSeq = new PacketSequenceCalculator();
+
+            _gcsCore = new CoreServices(
+                link.Server,
+                serverSeq,
+                logFactory: null,
+                timeProvider: TimeProvider.System,
+                new DefaultMeterFactory()
+            );
+
+            // PX4 target (보통 1/1)
+            var target = new MavlinkIdentity(1, 1);
+
+            _gcsHbServer = new HeartbeatServer(
+                target,
+                new MavlinkHeartbeatServerConfig(),
+                _gcsCore
+            );
+
+            _gcsHbServer.Start();
+
+            _gcsHbServer.Set(p =>
+            {
+                p.Type = MavType.MavTypeGcs;
+                p.Autopilot = MavAutopilot.MavAutopilotInvalid;
+                p.BaseMode = 0;
+                p.SystemStatus = MavState.MavStateActive;
+            });
+
+            OnLogReceived?.Invoke("[MAV] GCS HeartbeatServer started (doc virtual)");
+        }*/
 
         private void HookTelemetry(IClientDevice drone)
         {
@@ -302,7 +347,7 @@ namespace GCS_Project.xServices
             {
                 OnLogReceived?.Invoke("[MAV] Link watchdog started");
 
-                while (_cts != null && !_cts.IsCancellationRequested)
+                while (_cts != null && !_cts.Token.IsCancellationRequested)
                 {
                     try
                     {
