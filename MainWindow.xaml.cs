@@ -17,10 +17,11 @@ namespace GCS_Project
         private MapController? _mapController;
         private MainViewModel? _viewModel;
         private LibVLC? _libVLC;
-        private LibVLCSharp.Shared.MediaPlayer? _mp1; 
+        private LibVLCSharp.Shared.MediaPlayer? _mp1;
         private LibVLCSharp.Shared.MediaPlayer? _mp2;
         private LibVLCSharp.Shared.MediaPlayer? _mp3;
         #endregion
+
 
         #region [2. 생성자 (Constructor)]
         public MainWindow()
@@ -47,35 +48,30 @@ namespace GCS_Project
                     _viewModel = vm;
             };
 
-            this.LocationChanged += (s, e) => {
-                var offset = myPopup.HorizontalOffset;
-                myPopup.HorizontalOffset = offset + 0.01;
-                myPopup.HorizontalOffset = offset;
-            };
-
             this.LocationChanged += (s, e) =>
             {
                 // 1. 인공지평선/나침반 팝업 갱신
                 double offset1 = myPopup.HorizontalOffset;
                 myPopup.HorizontalOffset = offset1 + 0.01;
                 myPopup.HorizontalOffset = offset1;
-
-                // 2. 카메라 제어 패널 팝업 갱신
-                double offset2 = cameraPopup.HorizontalOffset;
-                cameraPopup.HorizontalOffset = offset2 + 0.01;
-                cameraPopup.HorizontalOffset = offset2;
             };
 
             this.Loaded += MainWindow_Loaded;
         }
         #endregion
 
+
         #region [3. 초기화 (Initialization)]
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            if (_viewModel == null) return;
-
+            if (_viewModel == null)
+            {
+                MessageBox.Show("ViewModel(DataContext) 연결이 안 됨");
+                return;
+            }
             await InitializeMapAsync();
+
+            // PlayRtpStream(_mp1);
         }
 
         private async Task InitializeMapAsync()
@@ -123,6 +119,7 @@ namespace GCS_Project
 
         #endregion
 
+
         #region [4. 브릿지: ViewModel -> Map (Event Subscriptions)]
         /// <summary>
         /// ViewModel에서 발생하는 신호를 지도(JS)에 반영하도록 연결합니다.
@@ -134,7 +131,11 @@ namespace GCS_Project
             // 1. 드론 실시간 위치 업데이트
             _viewModel.PositionUpdated += (lat, lng) =>
             {
-                _ = _mapController.UpdateDroneLocation(lat, lng);
+                Dispatcher.InvokeAsync(async () =>
+                {
+                    if (_mapController != null)
+                        await _mapController.UpdateDroneLocation(lat, lng);
+                });
             };
 
             // 2. 이륙 지점 마커 설정
@@ -178,6 +179,7 @@ namespace GCS_Project
             };
         }
         #endregion
+
 
         #region [5. 이벤트 핸들러 (Event Handlers)]
         /// <summary>

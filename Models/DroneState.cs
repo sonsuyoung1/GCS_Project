@@ -17,14 +17,8 @@ namespace GCS_Project.Models
         private bool _isConnected;
         private double? _takeoffLat;
         private double? _takeoffLng;
-        private int _batteryPercent; // 추가된 배터리 필드
+        private int _batteryPercent;
         private bool _isArmed;
-
-        // --- HUD(인공지평선/나침반)를 위한 추가 필드 ---
-        private double _pitch;      // 기체의 앞뒤 기울기
-        private double _roll;       // 기체의 좌우 회전
-        private double _heading;    // 기체가 바라보는 방위 (Yaw)
-
         private bool _isTargetDetected;
         private double _targetLat;
         private double _targetLng;
@@ -40,10 +34,10 @@ namespace GCS_Project.Models
         public int BatteryPercent { get => _batteryPercent; set => SetProperty(ref _batteryPercent, value); }
         public bool IsArmed { get => _isArmed; set => SetProperty(ref _isArmed, value); }
 
-        // --- HUD 속성 (SetProperty를 통해 UI에 실시간 반영) ---
-        public double Pitch { get => _pitch; set => SetProperty(ref _pitch, value); }
-        public double Roll { get => _roll; set => SetProperty(ref _roll, value); }
-        public double Heading { get => _heading; set => SetProperty(ref _heading, value); }
+        // 어차피 뷰모델이 가져다 계산만 할 거니까 알림 장치 다 떼고 순수하게 값만 저장.
+        public double Pitch { get; set; }
+        public double Roll { get; set; }
+        public double Heading { get; set; }
 
         public bool IsTargetDetected { get => _isTargetDetected; set => SetProperty(ref _isTargetDetected, value); }
         public double TargetLat { get => _targetLat; set => SetProperty(ref _targetLat, value); }
