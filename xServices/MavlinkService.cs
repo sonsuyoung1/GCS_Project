@@ -20,7 +20,7 @@ namespace GCS_Project.xServices
         private readonly List<GeoPoint> _waypoints = new();
         private bool _isMissionRunning;
         private CancellationTokenSource? _cts;
-        private readonly CompositeDisposable _subs = new();
+        private readonly CompositeDisposable _subs = new(); // 메모리 누수 방지하기 위해 구독 해지 쓰레기통
         private const string GcsRouterId = "GCS_ROUTER";
         private const int GcsSystemId = 255;
         private const int GcsComponentId = 255;
@@ -36,10 +36,12 @@ namespace GCS_Project.xServices
         private Task? _linkWatchdogTask;
         #endregion
 
+
         #region [2. 데이터 속성 및 상태 (State & Data)]
         public DroneState CurrentState { get; } = new DroneState();
         // public ObservableCollection<DetectedTarget> DetectedTargets { get; } = new();
         #endregion
+
 
         #region [3. 이벤트 (Events)]
         public event Action<DroneState>? OnDataUpdated;
@@ -47,6 +49,7 @@ namespace GCS_Project.xServices
         public event Action<int>? OnWaypointCountChanged;
         public event Action? OnMissionCompleted;
         #endregion
+
 
         #region [4. 초기화 및 서비스 제어 (Lifecycle)]
         /// <summary>
@@ -167,6 +170,7 @@ namespace GCS_Project.xServices
         }
         #endregion
 
+
         #region [5. 텔레메트리 핸들링 (Telemetry Hooks)]
         /// <summary>
         /// 드론의 실시간 센서 데이터(하트비트, GPS, 배터리, 기체 자세 등) 스트림을 구독하여 GCS 상태를 갱신합니다.
@@ -176,7 +180,7 @@ namespace GCS_Project.xServices
         {
             OnLogReceived?.Invoke("[MAV] 센서 데이터(Telemetry) 스트림 연결 시작...");
 
-            // 1) 하트비트 (팀원의 도배 방지 로직 적용!)
+            // 1) 하트비트
             drone.GetMicroservice<IHeartbeatClient>()?.RawHeartbeat
                 .Subscribe(_ =>
                 {
@@ -278,7 +282,7 @@ namespace GCS_Project.xServices
         }
 
         /// <summary>
-        /// // 백그라운드에서 기체의 심장 박동(Heartbeat)을 지속적으로 감시하여, 지정된 시간(3초) 응답이 없으면 통신 단절로 처리합니다.
+        /// 백그라운드에서 기체의 심장 박동(Heartbeat)을 지속적으로 감시하여, 지정된 시간(3초) 응답이 없으면 통신 단절로 처리합니다.
         /// </summary>
         private void StartLinkWatchdog()
         {
@@ -392,7 +396,6 @@ namespace GCS_Project.xServices
             });
         }*/
         #endregion
-
 
 
         #region [6. 비행 명령 (Flight Commands)]
@@ -559,10 +562,7 @@ namespace GCS_Project.xServices
                 OnLogReceived?.Invoke($"[오류] 시동 끄기(Disarm) 명령 전송 실패: {ex.Message}");
             }
         }
-
-
         #endregion
-
 
 
         #region [7. 미션 로직 (Mission & Waypoints)]
@@ -836,8 +836,6 @@ namespace GCS_Project.xServices
                 OnLogReceived?.Invoke("[알림] 이미 웨이포인트가 비어있습니다.");
             }
         }
-
-
         #endregion
 
 
