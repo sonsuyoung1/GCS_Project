@@ -18,8 +18,6 @@ namespace GCS_Project
         private MainViewModel? _viewModel;
         private LibVLC? _libVLC;
         private LibVLCSharp.Shared.MediaPlayer? _mp1;
-        private LibVLCSharp.Shared.MediaPlayer? _mp2;
-        private LibVLCSharp.Shared.MediaPlayer? _mp3;
         #endregion
 
 
@@ -28,25 +26,16 @@ namespace GCS_Project
         {
             InitializeComponent(); // XAML으로 UI구현한 것을 실제 메모리에 올리고 조립.
 
+            _viewModel = new MainViewModel();
+            this.DataContext = _viewModel;
+
             // ===== [VIDEO INIT] =====
             Core.Initialize();
             _libVLC = new LibVLC("--network-caching=100");
 
-            // 각 VideoView에 플레이어 연결
+            // VideoView에 플레이어 연결
             _mp1 = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
-            _mp2 = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
-            _mp3 = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
-
             VideoView1.MediaPlayer = _mp1;
-            VideoView2.MediaPlayer = _mp2;
-            VideoView3.MediaPlayer = _mp3;
-
-            // DataContext가 바뀔 때 ViewModel 참조 업데이트
-            this.DataContextChanged += (s, e) =>
-            {
-                if (this.DataContext is MainViewModel vm) // datecontext가 mainviewmodel인지 확인 하고 맞으면 _viewmodel에 저장.
-                    _viewModel = vm;
-            };
 
             this.LocationChanged += (s, e) =>
             {
@@ -115,8 +104,6 @@ namespace GCS_Project
                 MessageBox.Show($"지도 초기화 실패: {ex.Message}", "오류", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-
-
         #endregion
 
 
@@ -247,11 +234,7 @@ namespace GCS_Project
             try
             {
                 _mp1?.Stop(); 
-                _mp2?.Stop(); 
-                _mp3?.Stop();
                 _mp1?.Dispose(); 
-                _mp2?.Dispose();
-                _mp3?.Dispose();
                 _libVLC?.Dispose();
             }
             catch { }

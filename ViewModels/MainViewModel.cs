@@ -21,6 +21,7 @@ namespace GCS_Project.ViewModels
         private double _headingOffset;
         private bool _mavStarting;
         private string _currentDateTime = "";
+        private bool _isFlyingHigh = false;
 
         private const string MODE_IDLE = "IDLE";
         private const string MODE_TAKEOFF = "TAKEOFF";
@@ -51,7 +52,6 @@ namespace GCS_Project.ViewModels
             get => _currentDateTime;
             set => SetProperty(ref _currentDateTime, value);
         }
-
         public DetectedTarget? SelectedTarget
         {
             get => _selectedTarget;
@@ -61,7 +61,6 @@ namespace GCS_Project.ViewModels
                     (FollowCommand as RelayCommand)?.NotifyCanExecuteChanged();
             }
         }
-
         public double PitchOffset
         {
             get => _pitchOffset;
@@ -73,18 +72,18 @@ namespace GCS_Project.ViewModels
             set => SetProperty(ref _headingOffset, value);
         }
 
-        // 버튼 활성화 조건들
+        // 버튼 활성화 조건들 
         // 버튼 활성화 조건들 (매직 스트링 제거 완벽 적용!)
-        public bool IsMissionStartEnabled => FlightMode == MODE_TAKEOFF && _currentWaypointCount > 0;
-        public bool IsTakeoffEnabled => FlightMode == MODE_IDLE;
-        public bool IsLandingEnabled => FlightMode == MODE_TAKEOFF && FlightMode != MODE_MISSION;
-        public bool IsRtlEnabled => FlightMode == MODE_TAKEOFF || FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING;
+        public bool IsMissionStartEnabled => (FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && Drone.IsConnected && Drone.IsArmed;
+        public bool IsTakeoffEnabled => (FlightMode == MODE_IDLE) && Drone.IsConnected && Drone.IsArmed;
+        public bool IsLandingEnabled => (FlightMode == MODE_TAKEOFF && FlightMode != MODE_MISSION) && Drone.IsConnected && Drone.IsArmed;
+        public bool IsRtlEnabled => (FlightMode == MODE_TAKEOFF || FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING) && Drone.IsConnected && Drone.IsArmed;
         public bool IsUndoEnabled => (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && FlightMode != MODE_MISSION;
         public bool IsClearEnabled => (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && FlightMode != MODE_MISSION;
-        public bool IsFollowEnabled => SelectedTarget != null && FlightMode != MODE_IDLE && FlightMode != MODE_TRACKING;
-        public bool IsStopEnabled => FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING;
-        public bool IsArmEnabled => FlightMode == MODE_IDLE && !_mavlinkService.CurrentState.IsArmed;
-        public bool IsDisarmEnabled => FlightMode == MODE_IDLE && _mavlinkService.CurrentState.IsArmed;
+        public bool IsFollowEnabled => SelectedTarget != null && (FlightMode != MODE_IDLE && FlightMode != MODE_TRACKING) && Drone.IsConnected && Drone.IsArmed;
+        public bool IsStopEnabled => (FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING);
+        public bool IsArmEnabled => (FlightMode == MODE_IDLE) && Drone.IsConnected && !Drone.IsArmed;
+        public bool IsDisarmEnabled => FlightMode == MODE_IDLE && Drone.IsConnected && Drone.IsArmed;
         #endregion
 
         #region [3. 커맨드 (Commands)]
@@ -256,9 +255,15 @@ namespace GCS_Project.ViewModels
             }
 
             // 6. 착륙 감지
-            if (FlightMode == MODE_TAKEOFF && state.Altitude <= 0.5)
+            if (state.Altitude > 1.0)
+            {
+                _isFlyingHigh = true; // 1m 이상 날아올랐음을 기록!
+            }
+
+            if (_isFlyingHigh && FlightMode == MODE_TAKEOFF && state.Altitude <= 0.5)
             {
                 FlightMode = MODE_IDLE;
+                _isFlyingHigh = false; // 다시 초기화
                 ChatLog += "\n착륙 완료. 시스템 대기 중.";
             }
         }
@@ -329,7 +334,7 @@ namespace GCS_Project.ViewModels
             }
         }
 
-        // 3. 이륙 (Takeoff는 원래 비동기(Task) 메서드이므로 바로 await)
+        // 3. 이륙
         private async void ExecuteTakeoff()
         {
             try
@@ -478,11 +483,16 @@ namespace GCS_Project.ViewModels
 
         private void NotifyCommandStates()
         {
-            // 버튼들 활성화 할지 말지 검증
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                CommandManager.InvalidateRequerySuggested();
-            });
+            (StartMissionCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (StopMissionCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (ArmCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (DisarmCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (TakeoffCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (LandingCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (RtlCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (UndoWaypointCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (ClearWaypointsCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (FollowCommand as RelayCommand)?.NotifyCanExecuteChanged();
         }
 
         public void Dispose()
