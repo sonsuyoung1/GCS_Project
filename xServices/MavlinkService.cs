@@ -2,6 +2,7 @@
 using Asv.IO;
 using Asv.Mavlink;
 using Asv.Mavlink.Common;
+using Asv.Mavlink.Minimal;
 using GCS_Project.Models;
 using ObservableCollections;
 using R3;
@@ -9,6 +10,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.Metrics;
+using System.Net.Sockets;
+using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -24,16 +27,16 @@ namespace GCS_Project.xServices
         private const string GcsRouterId = "GCS_ROUTER";
         private const int GcsSystemId = 255;
         private const int GcsComponentId = 255;
+        private bool _telemetryHooked;
+        private bool _linkDownReported;
+        private DateTime _lastHeartbeatUtc = DateTime.MinValue;
+        private Task? _linkWatchdogTask;
 
         // v4 core
         private IProtocolFactory? _protocol;
         private IProtocolRouter? _router;
         private IDeviceExplorer? _explorer;
         private IClientDevice? _drone;
-
-        // 아래 두 줄이 추가됨
-        private DateTime _lastHeartbeatUtc = DateTime.MinValue;
-        private Task? _linkWatchdogTask;
         #endregion
 
 
@@ -55,11 +58,7 @@ namespace GCS_Project.xServices
         /// <summary>
         /// MAVLink 프로토콜과 UDP 라우터를 초기화하여 기체를 탐색하고, 연결이 완료되면 데이터 스트림을 활성화합니다.
         /// </summary>
-        /// <param name="listenHost"></param>
-        /// <param name="listenPort"></param>
-        /// <param name="droneIp"></param>
-        /// <returns></returns>
-        public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14550, string droneIp = "192.168.1.136")
+        public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14550, string droneIp = "192.168.0.46") // ip는 와이파이 달라질 때마다 바꿔면 됨
         {
             if (_router != null) return;
 
@@ -67,16 +66,16 @@ namespace GCS_Project.xServices
 
             _cts = new CancellationTokenSource();
 
-            // 1. 프로토콜 엔진 생성
+            // 1) 프로토콜 엔진 생성
             _protocol = Protocol.Create(builder =>
             {
                 builder.RegisterMavlinkV2Protocol();
                 builder.Features.RegisterBroadcastFeature<MavlinkMessage>();
                 builder.Formatters.RegisterSimpleFormatter();
             });
-            OnLogReceived?.Invoke("[MAV] 프로토콜 생성");
+            OnLogReceived?.Invoke("[MAV] 프로토콜 생성됨");
 
-            // 2. 라우터 설정 (데이터 통로)
+            // 2) 라우터 설정 (데이터 통로)
             // PX4 → GCS (Telemetry 수신)
             _router = _protocol.CreateRouter(GcsRouterId);
             _router.AddUdpPort(p =>
@@ -87,51 +86,55 @@ namespace GCS_Project.xServices
                 p.IsEnabled = true;
                 p.Name = "udp_in";
             });
-            OnLogReceived?.Invoke("[MAV] Router created");
+            OnLogReceived?.Invoke("[MAV] 라우터 생성됨");
 
             // GCS →  PX4 (Telemetry 수신)
             _router.AddUdpPort(p =>
             {
                 p.Scheme = "udp";
-                p.Host = droneIp; // 메서드 매개변수인 droneIp("192.168.0.6") 사용
-                p.Port = 14552;
+                p.Host = droneIp;
+                p.Port = 14551;
                 p.IsEnabled = true;
                 p.Name = "udp_out";
             });
 
-            // 3. 장치 탐색기 설정 (드론 자동 찾기)
-            var seq = new PacketSequenceCalculator();
-            var identity = new MavlinkIdentity(GcsSystemId, GcsComponentId);
 
+            // 3) 장치 탐색기 설정 (드론 자동 찾기)
+            var seq = new PacketSequenceCalculator(); // sequence는 몇 번쨰 피킷인지 순서를 적어 보내는 역할
+            var identity = new MavlinkIdentity(GcsSystemId, GcsComponentId); // identity는 gcs 내가 누군지 알려주는 역할
             _explorer = DeviceExplorer.Create(_router, b =>
             {
-                b.SetConfig(new ClientDeviceBrowserConfig { DeviceTimeoutMs = 1000 });
+                b.SetConfig(new ClientDeviceBrowserConfig
+                {
+                    DeviceTimeoutMs = 1000,
+                    DeviceCheckIntervalMs = 30_000 // 30초 유예기간 (핵심)
+                });
                 b.Factories.RegisterDefaultDevices(identity, seq, new InMemoryConfiguration());
             });
             OnLogReceived?.Invoke("[MAV] DeviceExplorer가 생성되었습니다");
 
-            // 4. 드론 장치 발견 대기
+
+            // 4) 드론 장치 발견 대기
             var found = new TaskCompletionSource();
-            _subs.Add(_explorer.Devices.ObserveAdd().Take(1).Subscribe(kvp =>
+            _subs.Add(_explorer.Devices.ObserveAdd().Take(1).Subscribe(kvp => // 새로운 기기가 추가되는걸 Observe 지켜보다가 take(1)으로 발견되면 코드 실행
             {
                 _drone = kvp.Value.Value;
                 found.TrySetResult();
             }));
-
             await found.Task;
             OnLogReceived?.Invoke("[시스템] 드론 장치 감지됨");
 
 
-            // 5. 드론 상태 준비 완료 대기
+            // 5) 드론 상태 준비 완료 대기
             var ready = new TaskCompletionSource();
             _subs.Add(_drone!.State.Subscribe(st =>
             {
                 if (st == ClientDeviceState.Complete) ready.TrySetResult();
             }));
-
             await ready.Task;
 
-            // 6. 데이터 스트림 연결
+
+            // 6) 데이터 스트림 연결
             HookTelemetry(_drone);
             OnLogReceived?.Invoke("[MAV] 텔레메트리가 연결됨");
             // HookCustomMessages(_router); // YOLO 전용
@@ -178,31 +181,59 @@ namespace GCS_Project.xServices
         /// <param name="drone"></param>
         private void HookTelemetry(IClientDevice drone)
         {
+            if (_telemetryHooked) return;
+            _telemetryHooked = true;
+
             OnLogReceived?.Invoke("[MAV] 센서 데이터(Telemetry) 스트림 연결 시작...");
 
-            // 1) 하트비트
-            drone.GetMicroservice<IHeartbeatClient>()?.RawHeartbeat
-                .Subscribe(_ =>
-                {
-                    // 나중에 연결 끊김 감지를 위해 시간 기록 (팀원 아이디어)
-                    // _lastHeartbeatUtc = DateTime.UtcNow; // (뷰모델에 변수가 있다면 주석 해제)
-
-                    if (!CurrentState.IsConnected)
+            // 어떤 패킷이든 들어오면 살아있다는 방어 로직임.
+            _router!.OnRxMessage
+                    .Subscribe(_ =>
                     {
-                        CurrentState.IsConnected = true;
-                        OnDataUpdated?.Invoke(CurrentState);
-                        OnLogReceived?.Invoke("[MAV] 드론 하트비트 수신 완료! (통신 100% 정상)");
-                    }
-                })
-                .AddTo(_subs);
+                        _lastHeartbeatUtc = DateTime.UtcNow; // 어떤 데이터든 들어오면 생존 시간 갱신
+
+                        // 연결이 끊겨 있다가 다시 데이터가 들어오면 즉시 연결 복구
+                        if (!CurrentState.IsConnected)
+                        {
+                            CurrentState.IsConnected = true;
+                            OnDataUpdated?.Invoke(CurrentState);
+                            OnLogReceived?.Invoke("[MAV] 통신 연결됨 (데이터 수신 확인)");
+                        }
+                    })
+                    .AddTo(_subs);
+
+            // 1) 하트비트 감시
+            var hb = drone.GetMicroservice<IHeartbeatClient>();
+            if (hb == null)
+            {
+                OnLogReceived?.Invoke("[MAV] [경고] 기체에서 하트비트 서비스를 찾을 수 없습니다.");
+            }
+            else
+            {
+                hb.RawHeartbeat
+                    .Subscribe(packet =>
+                    {
+                        _lastHeartbeatUtc = DateTime.UtcNow; // 시간만 갱신! (여기서 IsConnected를 또 건드리면 UI 렉 발생)
+
+                        bool isArmed = (packet?.BaseMode & MavModeFlag.MavModeFlagSafetyArmed) != 0;
+
+                        // 만약 기존 상태랑 다르면? (시동이 방금 걸렸거나 꺼졌다면)
+                        if (CurrentState.IsArmed != isArmed)
+                        {
+                            CurrentState.IsArmed = isArmed;
+                            OnDataUpdated?.Invoke(CurrentState); // 데이터 변했다고 UI에 방송!
+                        }
+                    })
+                    .AddTo(_subs);
+                OnLogReceived?.Invoke("[MAV] 하트비트 감시 시작");
+            }
 
             // 2) 위치 정보 (GPS)
             drone.GetMicroservice<IPositionClient>()?.GlobalPosition
                 .Subscribe(gp => {
-                    // 라이브러리가 이미 변환해 주므로 1e7 나누기 생략 (이상하면 1e7로 나누세요)
-                    CurrentState.Latitude = gp.Lat;
-                    CurrentState.Longitude = gp.Lon;
-                    CurrentState.Altitude = gp.Alt;
+                    CurrentState.Latitude = gp.Lat / 1e7;
+                    CurrentState.Longitude = gp.Lon / 1e7;
+                    CurrentState.Altitude = gp.Alt / 1000.0; // 고도(mm -> m 변환)
                     OnDataUpdated?.Invoke(CurrentState);
                 }).AddTo(_subs);
 
@@ -400,12 +431,44 @@ namespace GCS_Project.xServices
 
         #region [6. 비행 명령 (Flight Commands)]
         /// <summary>
+        /// 드론의 비행 모드(GUIDED, AUTO, RTL 등)를 변경합니다.
+        /// </summary>
+        public async Task SetFlightMode(MavModeFlag baseMode, uint customMode)
+        {
+            if (_drone == null || !CurrentState.IsConnected)
+            {
+                OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 모드를 변경할 수 없습니다.");
+                return;
+            }
+
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null) return;
+
+            try
+            {
+                // 최신 PX4가 좋아하는 CommandLong 방식으로 모드 변경!
+                await cmd.SendCommandLong(
+                    MavCmd.MavCmdDoSetMode,
+                    (float)baseMode,       // Param 1: 기본 모드 (보통 CustomModeEnabled = 1)
+                    customMode,            // Param 2: 커스텀 모드 번호 (PX4의 AUTO = 4)
+                    0f, 0f, 0f, 0f, 0f,    // 나머지 파라미터는 0
+                    _cts?.Token ?? CancellationToken.None
+                );
+
+                OnLogReceived?.Invoke($"[명령] 비행 모드 변경 요청 전송 (커스텀 코드: {customMode})");
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] 모드 변경 중 예외 발생: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// 지정된 고도로 이륙 명령(Takeoff)을 전송합니다.
         /// </summary>
-        /// <param name="altitude">목표 이륙 고도 (미터)</param>
         public async Task Takeoff(float altitude)
         {
-            // 1. 안전장치: 드론 객체와 통신 상태(IsConnected)까지 꼼꼼하게 확인
+            // 1. 안전장치: 드론 객체와 통신 상태(IsConnected) 꼼꼼하게 확인
             if (_drone == null || !CurrentState.IsConnected)
             {
                 OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 이륙할 수 없습니다.");
@@ -415,16 +478,26 @@ namespace GCS_Project.xServices
             var cmd = _drone.GetMicroservice<ICommandClient>();
             if (cmd == null) return;
 
-            // 2. 명령 전송 및 에러 방어막 (try-catch)
+            // 2. 명령 전송 및 에러 방어막
             try
             {
                 OnLogReceived?.Invoke($"[명령] 이륙 시도 (목표 고도: {altitude}m)...");
 
+                await SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 4);
+
+                // 드론이 모드를 바꿀 수 있게 잠깐 숨 돌릴 시간(0.2초)을 줍니다.
+                await Task.Delay(200);
+
+                // 실제 이륙 명령 전송 (빈칸은 반드시 NaN으로 채움!)
+                // param7 = altitude, 나머지 1~6은 NaN(미사용) 처리
                 await cmd.SendCommandLong(
                     MavCmd.MavCmdNavTakeoff,
-                    0f, 0f, 0f, 0f, 0f, 0f, altitude, // altitude는 이미 float이므로 그대로 둠
+                    float.NaN, float.NaN, float.NaN, float.NaN, float.NaN, float.NaN,
+                    altitude,
                     _cts?.Token ?? CancellationToken.None
                 );
+
+                OnLogReceived?.Invoke($"[확인] 이륙(Takeoff) 명령이 기체로 전송되었습니다.");
             }
             catch (Exception ex)
             {
@@ -432,6 +505,7 @@ namespace GCS_Project.xServices
                 OnLogReceived?.Invoke($"[오류] 이륙 명령 전송 실패: {ex.Message}");
             }
         }
+
 
         /// <summary>
         /// 현재 위치에서 즉시 착륙 명령(Land)을 전송합니다.
@@ -587,7 +661,7 @@ namespace GCS_Project.xServices
                     OnLogReceived?.Invoke($"[미션] 웨이포인트 비행 시작 (남은 지점: {_waypoints.Count}개)");
 
                     // 2. 비행 모드 변경: 컴퓨터 명령을 듣는 GUIDED(4) 모드로 전환
-                    await SetFlightMode((MavMode)1, 4);
+                    await SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 4);
                     await Task.Delay(500, _cts?.Token ?? CancellationToken.None);
 
                     // 현재 드론이 향하고 있는 '지점'을 추적하기 위한 변수
@@ -601,7 +675,7 @@ namespace GCS_Project.xServices
                         // 리스트의 가장 앞(0번)에 있는 지점을 '이번에 가야 할 곳'으로 설정
                         var nextPoint = _waypoints[0];
 
-                        // 🌟 핵심 로직: 새로운 지점으로 목적지가 바뀌었을 때만 GoTo 명령 전송 (중복 전송 방지)
+                        // 핵심 로직: 새로운 지점으로 목적지가 바뀌었을 때만 GoTo 명령 전송 (중복 전송 방지)
                         if (currentDestination != nextPoint)
                         {
                             await GoTo(nextPoint.Lat, nextPoint.Lng);
@@ -650,41 +724,6 @@ namespace GCS_Project.xServices
             });
         }
 
-        /// <summary>
-        /// 드론의 비행 모드(GUIDED, AUTO, RTL 등)를 변경합니다.
-        /// </summary>
-        /// <param name="mode">기본 모드 플래그 (일반적으로 MavMode.MavModeFlagCustomModeEnabled 사용)</param>
-        /// <param name="customMode">FC별 고유 모드 번호 (ArduPilot GUIDED = 4)</param>
-        public async Task SetFlightMode(MavMode mode, uint customMode)
-        {
-            if (_drone == null || !CurrentState.IsConnected)
-            {
-                OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 모드를 변경할 수 없습니다.");
-                return;
-            }
-
-            try
-            {
-                var packet = new SetModePacket();
-
-                packet.SystemId = (byte)GcsSystemId;
-                packet.ComponentId = (byte)GcsComponentId;
-
-                packet.Payload.TargetSystem = 1;
-                packet.Payload.BaseMode = mode | (MavMode)1;
-                packet.Payload.CustomMode = customMode;
-
-                if (_router != null)
-                {
-                    await _router.Send(packet, _cts?.Token ?? CancellationToken.None);
-                    OnLogReceived?.Invoke($"[명령] 비행 모드 변경 요청 (코드: {customMode})");
-                }
-            }
-            catch (Exception ex)
-            {
-                OnLogReceived?.Invoke($"[오류] 모드 변경 중 예외 발생: {ex.Message}");
-            }
-        }
 
         /// <summary>
         /// 지정된 위도, 경도, 고도로 기체를 즉시 이동시킵니다.
