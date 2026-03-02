@@ -22,6 +22,9 @@ namespace GCS_Project.ViewModels
         private bool _mavStarting;
         private string _currentDateTime = "";
         private bool _isFlyingHigh = false;
+        private bool _isTakeoffMarkerDrawn = false;
+        private readonly List<GeoPoint> _waypoints = new List<GeoPoint>();
+        private DateTime _lastMapUpdate = DateTime.MinValue;
 
         private const string MODE_IDLE = "IDLE";
         private const string MODE_TAKEOFF = "TAKEOFF";
@@ -72,6 +75,7 @@ namespace GCS_Project.ViewModels
             set => SetProperty(ref _headingOffset, value);
         }
 
+
         // 버튼 활성화 조건들 
         // 버튼 활성화 조건들 (매직 스트링 제거 완벽 적용!)
         public bool IsMissionStartEnabled => (FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && Drone.IsConnected && Drone.IsArmed;
@@ -85,6 +89,7 @@ namespace GCS_Project.ViewModels
         public bool IsArmEnabled => (FlightMode == MODE_IDLE) && Drone.IsConnected && !Drone.IsArmed;
         public bool IsDisarmEnabled => FlightMode == MODE_IDLE && Drone.IsConnected && Drone.IsArmed;
         #endregion
+
 
         #region [3. 커맨드 (Commands)]
         public ICommand StartMissionCommand { get; }
@@ -100,6 +105,7 @@ namespace GCS_Project.ViewModels
         // public ICommand StopTrackingCommand { get; }
         #endregion
 
+
         #region [4. 이벤트 (View 통신용)]
         public event Action? UndoWaypointRequested;
         public event Action? ClearWaypointsRequested;
@@ -107,6 +113,7 @@ namespace GCS_Project.ViewModels
         public event Action<double, double>? TakeoffPointSet;
         public event Action<double, double>? PersonDetectedOnMap;
         #endregion
+
 
         #region [5. 생성자 (Constructor)]
         public MainViewModel()
@@ -155,6 +162,7 @@ namespace GCS_Project.ViewModels
         }
         #endregion
 
+
         #region [6. 이벤트 핸들러 (Event Handlers)]
         private async void InitializeService()
         {
@@ -178,10 +186,37 @@ namespace GCS_Project.ViewModels
                 _mavStarting = false;
             }
 
-            // 드론의 데이터 업데이트(화면의 계기판들을 최신화)
+            // 드론의 데이터 업데이트
             _mavlinkService.OnDataUpdated += (state) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() => HandleDroneData(state));
+            };
+
+            // 웨이포인트 개수 변화
+            _mavlinkService.OnWaypointCountChanged += (count) =>
+            {
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    _currentWaypointCount = count;
+                    NotifyCommandStates();
+                    ChatLog += $"\n[시스템] 웨이포인트 개수 동기화 됨: {count}개"; // 확인용 로그
+                });
+            };
+
+            _mavlinkService.OnMissionCompleted += () =>
+            {
+                Application.Current.Dispatcher.BeginInvoke(() => {
+                    FlightMode = MODE_TAKEOFF;
+                    ChatLog += "\n모든 목적지에 도착하여 미션을 종료합니다.";
+                });
+            };
+
+            _mavlinkService.OnLogReceived += (message) =>
+            {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    ChatLog += $"\n{message}";
+                });
             };
 
             // 타겟 업데이트
@@ -206,29 +241,6 @@ namespace GCS_Project.ViewModels
                     }
                 });
             };*/
-
-            // 웨이포인트 개수 변화
-            _mavlinkService.OnWaypointCountChanged += (count) =>
-            {
-                _currentWaypointCount = count;
-                NotifyCommandStates();
-            };
-
-            _mavlinkService.OnMissionCompleted += () =>
-            {
-                Application.Current.Dispatcher.BeginInvoke(() => {
-                    FlightMode = MODE_TAKEOFF;
-                    ChatLog += "\n모든 목적지에 도착하여 미션을 종료합니다.";
-                });
-            };
-
-            _mavlinkService.OnLogReceived += (message) =>
-            {
-                Application.Current.Dispatcher.BeginInvoke(() =>
-                {
-                    ChatLog += $"\n{message}";
-                });
-            };
         }
 
         private void HandleDroneData(DroneState state)
@@ -238,11 +250,23 @@ namespace GCS_Project.ViewModels
                 Drone.IsConnected = true;
             }
 
-            // 2. 기존 위치 업데이트 로직
-            if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue)
-                TakeoffPointSet?.Invoke(state.TakeoffLat.Value, state.TakeoffLng.Value);
+            if (state.Latitude == 0 && state.Longitude == 0) return;
 
-            PositionUpdated?.Invoke(state.Latitude, state.Longitude);
+            // 2. 기존 위치 업데이트 로직
+            if ((DateTime.UtcNow - _lastMapUpdate).TotalMilliseconds > 200)
+            {
+                _lastMapUpdate = DateTime.UtcNow;
+
+                // 1. 드론 현재 위치 업데이트
+                PositionUpdated?.Invoke(state.Latitude, state.Longitude);
+
+                // 2. 이륙 마커 업데이트 (스위치를 확인해서 '딱 한 번만' 그립니다!)
+                if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue && !_isTakeoffMarkerDrawn)
+                {
+                    TakeoffPointSet?.Invoke(state.TakeoffLat.Value, state.TakeoffLng.Value);
+                    _isTakeoffMarkerDrawn = true; // "나 그렸어! 이제 다시 부르지 마!"
+                }
+            }
 
             // 3. HUD 계산
             PitchOffset = state.Pitch * 3.55;
@@ -255,16 +279,29 @@ namespace GCS_Project.ViewModels
             }
 
             // 6. 착륙 감지
+            // 6. 착륙 및 비행 상태 초기화 (완벽 방어막)
             if (state.Altitude > 1.0)
             {
-                _isFlyingHigh = true; // 1m 이상 날아올랐음을 기록!
+                _isFlyingHigh = true; // 1m 이상 올라가면 비행 중으로 기록
             }
 
-            if (_isFlyingHigh && FlightMode == MODE_TAKEOFF && state.Altitude <= 0.5)
+            // 절대 규칙: 시동이 꺼지면(Disarmed) 무조건 모든 비행 기억을 지우고 대기 모드로!
+            if (!state.IsArmed)
+            {
+                _isFlyingHigh = false; // 전생의 기억(비행 기록) 완벽 삭제!
+
+                if (FlightMode != MODE_IDLE)
+                {
+                    FlightMode = MODE_IDLE; // UI도 IDLE로 안전하게 복귀
+                    ChatLog += "\n[시스템] 시동 꺼짐 확인. 대기(IDLE) 상태로 전환합니다.";
+                }
+            }
+            // 시동이 켜져있고 TAKEOFF 모드인데 비정상적으로 땅에 곤두박질친 경우의 예외 처리
+            else if (_isFlyingHigh && FlightMode == MODE_TAKEOFF && state.Altitude <= 0.5)
             {
                 FlightMode = MODE_IDLE;
-                _isFlyingHigh = false; // 다시 초기화
-                ChatLog += "\n착륙 완료. 시스템 대기 중.";
+                _isFlyingHigh = false;
+                ChatLog += "\n[시스템] 고도 저하 감지. 대기 상태로 전환합니다.";
             }
         }
         #endregion
@@ -373,19 +410,30 @@ namespace GCS_Project.ViewModels
             }
         }
 
-        // 5. 마지막 웨이포인트 취소
+        // 5. 복귀 (RTL)
+        private async void ExecuteRtl()
+        {
+            try
+            {
+                await _mavlinkService.Rtl();
+                ChatLog += "\n[명령] 복귀(RTL) 명령 전송.";
+
+                await Task.Run(() => _mavlinkService.ClearWaypoints());
+                ClearWaypointsRequested?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                ChatLog += $"\n[오류] 복귀 명령 실패: {ex.Message}";
+            }
+        }
+
+        // 6. 마지막 웨이포인트 취소
         private async void ExecuteUndoWaypoint()
         {
             try
             {
                 await Task.Run(() => _mavlinkService.UndoWaypoint());
-
-                /*// UI 테스트용
-                if (_currentWaypointCount > 0)
-                {
-                    _currentWaypointCount--;
-                    NotifyCommandStates();
-                }*/
+                UndoWaypointRequested?.Invoke();
             }
             catch (Exception ex)
             {
@@ -393,17 +441,13 @@ namespace GCS_Project.ViewModels
             }
         }
 
-        // 6. 모든 웨이포인트 삭제
+        // 7. 모든 웨이포인트 삭제
         private async void ExecuteClearWaypoints()
         {
             try
             {
                 await Task.Run(() => _mavlinkService.ClearWaypoints());
                 ClearWaypointsRequested?.Invoke();
-
-                /*// UI 테스트용
-                _currentWaypointCount = 0;
-                NotifyCommandStates();*/
             }
             catch (Exception ex)
             {
@@ -411,7 +455,22 @@ namespace GCS_Project.ViewModels
             }
         }
 
-        // 7. 객체 추적 실행
+        // 8. 지도에서 웨이포인트 추가
+        public async void AddWaypointFromMap(double lat, double lng)
+        {
+            try
+            {
+                await Task.Run(() => _mavlinkService.AddWaypoint(lat, lng));
+
+                ChatLog += $"\n[지도] 목적지 추가: {lat:F5}, {lng:F5}";
+            }
+            catch (Exception ex)
+            {
+                ChatLog += $"\n[오류] 목적지 추가 실패: {ex.Message}";
+            }
+        }
+
+        // 9. 객체 추적 실행
         private async void ExecuteFollow()
         {
             try
@@ -430,21 +489,7 @@ namespace GCS_Project.ViewModels
             }
         }
 
-        // 8. 복귀 (RTL)
-        private async void ExecuteRtl()
-        {
-            try
-            {
-                await _mavlinkService.Rtl();
-                ChatLog += "\n[명령] 복귀(RTL) 명령 전송.";
-            }
-            catch (Exception ex)
-            {
-                ChatLog += $"\n[오류] 복귀 명령 실패: {ex.Message}";
-            }
-        }
-
-        // 9. 객체 추적 중단
+        // 10. 객체 추적 중단
         /*private async void ExecuteStopTracking()
         {
             try
@@ -460,25 +505,6 @@ namespace GCS_Project.ViewModels
                 ChatLog += $"\n[오류] 추적 중단 실패: {ex.Message}";
             }
         }*/
-
-        // 10. 지도에서 웨이포인트 추가
-        public async void AddWaypointFromMap(double lat, double lng)
-        {
-            try
-            {
-                await Task.Run(() => _mavlinkService.AddWaypoint(lat, lng));
-
-                /*// UI 테스트용
-                _currentWaypointCount++;
-                NotifyCommandStates();*/
-
-                ChatLog += $"\n[지도] 목적지 추가: {lat:F5}, {lng:F5}";
-            }
-            catch (Exception ex)
-            {
-                ChatLog += $"\n[오류] 목적지 추가 실패: {ex.Message}";
-            }
-        }
         #endregion
 
         private void NotifyCommandStates()

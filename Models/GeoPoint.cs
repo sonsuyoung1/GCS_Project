@@ -21,11 +21,10 @@ namespace GCS_Project.Models
         public GeoPoint() { }
 
         // 편의를 위한 생성자
-        public GeoPoint(double lat, double lng, double alt = 0)
+        public GeoPoint(double lat, double lng)
         {
             Lat = lat;
             Lng = lng;
-            Alt = alt;
         }
 
         // 디버깅 시 좌표를 쉽게 확인하기 위함
