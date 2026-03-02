@@ -114,6 +114,8 @@
             const newLatLng = new L.LatLng(lat, lng);
             droneMarker.setLatLng(newLatLng);
 
+            map.panTo(newLatLng);
+
             if (typeof headingDeg === 'number') {
                 droneHeadingDeg = headingDeg;
                 droneMarker.setIcon(createDroneIcon(droneHeadingDeg));

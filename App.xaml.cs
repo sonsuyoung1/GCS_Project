@@ -9,11 +9,11 @@ namespace GCS_Project
         {
             base.OnStartup(e);
 
-            var viewModel = new MainViewModel();
+            
             var window = new MainWindow();
-
+            /*var viewModel = new MainViewModel();
             // View와 ViewModel을 연결합니다.
-            window.DataContext = viewModel;
+            window.DataContext = viewModel;*/
 
             window.Show();
         }

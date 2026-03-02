@@ -14,23 +14,25 @@ namespace GCS_Project.Services
             _webView = webView;
         }
 
-        // 이륙 지점을 지도에 표시하는 기능
+        // 이륙 지점 업데이트
         public async Task AddTakeoffMarker(double lat, double lng)
         {
             if (_webView != null && _webView.CoreWebView2 != null)
             {
-                // HTML/JS 쪽에 정의된 addTakeoffMarker(lat, lng) 함수를 호출합니다.
-                await _webView.ExecuteScriptAsync($"addTakeoffMarker({lat}, {lng})");
+                string script = $"addTakeoffMarker({lat.ToString(System.Globalization.CultureInfo.InvariantCulture)}, {lng.ToString(System.Globalization.CultureInfo.InvariantCulture)})";
+                await _webView.ExecuteScriptAsync(script);
             }
         }
 
         // 드론의 위도와 경도를 받아 지도의 마커 위치를 갱신.
+        // 드론 위치 업데이트
         public async Task UpdateDroneLocation(double lat, double lng)
         {
             if (_webView != null && _webView.CoreWebView2 != null)
             {
-                // HTML 내부에 정의된 자바스크립트 함수 updateLocation(lat, lng)을 호출합니다.
-                await _webView.ExecuteScriptAsync($"updateLocation({lat}, {lng})");
+                // InvariantCulture를 사용하여 무조건 '.' 으로 소수점이 찍히게 강제합니다!
+                string script = $"updateLocation({lat.ToString(System.Globalization.CultureInfo.InvariantCulture)}, {lng.ToString(System.Globalization.CultureInfo.InvariantCulture)})";
+                await _webView.ExecuteScriptAsync(script);
             }
         }
 

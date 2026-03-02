@@ -81,10 +81,27 @@ namespace GCS_Project
                 // 4. 초기화 성공 후 설정 (이 순서가 매우 중요합니다!)
                 // 배경 투명 설정
                 mapWebView.DefaultBackgroundColor = System.Drawing.Color.Transparent;
-
                 _mapController = new MapController(mapWebView);
 
-                // 5. 지도 HTML 로드
+                // 5. 지도가 완전히 로드되었을 때 이벤트를 연결하도록 타이밍 변경!
+                mapWebView.NavigationCompleted += (s, args) =>
+                {
+                    if (args.IsSuccess)
+                    {
+                        // 지도가 100% 켜졌을 때만 C#과 JS 브릿지 연결
+                        InitializeMapBridge();
+                        System.Diagnostics.Debug.WriteLine("[시스템] 지도 로딩 완료 및 브릿지 연결 성공!");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[시스템] 지도 로딩 실패: {args.WebErrorStatus}");
+                    }
+                };
+
+                // 6. 브릿지 메시지 설정 (이건 밖에서 미리 등록해도 괜찮습니다)
+                mapWebView.WebMessageReceived += OnWebMessageReceived;
+
+                // 7. 지도 HTML 로드 명령 (마지막에 실행!)
                 string mapPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "map.html");
                 if (File.Exists(mapPath))
                 {
@@ -94,10 +111,6 @@ namespace GCS_Project
                 {
                     System.Diagnostics.Debug.WriteLine("지도 파일을 찾을 수 없습니다: " + mapPath);
                 }
-
-                // 6. 브릿지 및 메시지 설정
-                InitializeMapBridge();
-                mapWebView.WebMessageReceived += OnWebMessageReceived;
             }
             catch (Exception ex)
             {
@@ -188,6 +201,7 @@ namespace GCS_Project
                 {
                     double lat = root.GetProperty("lat").GetDouble();
                     double lng = root.GetProperty("lng").GetDouble();
+
                     _viewModel.AddWaypointFromMap(lat, lng);
                 }
             }
