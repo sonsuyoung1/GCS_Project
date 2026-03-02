@@ -109,7 +109,7 @@ namespace GCS_Project.ViewModels
         #region [4. 이벤트 (View 통신용)]
         public event Action? UndoWaypointRequested;
         public event Action? ClearWaypointsRequested;
-        public event Action<double, double>? PositionUpdated;
+        public event Action<double, double, double>? PositionUpdated; // 03/02
         public event Action<double, double>? TakeoffPointSet;
         public event Action<double, double>? PersonDetectedOnMap;
         #endregion
@@ -258,7 +258,7 @@ namespace GCS_Project.ViewModels
                 _lastMapUpdate = DateTime.UtcNow;
 
                 // 1. 드론 현재 위치 업데이트
-                PositionUpdated?.Invoke(state.Latitude, state.Longitude);
+                PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Heading); //03/02
 
                 // 2. 이륙 마커 업데이트 (스위치를 확인해서 '딱 한 번만' 그립니다!)
                 if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue && !_isTakeoffMarkerDrawn)

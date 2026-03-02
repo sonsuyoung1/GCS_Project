@@ -128,13 +128,13 @@ namespace GCS_Project
         {
             if (_viewModel == null || _mapController == null) return;
 
-            // 1. 드론 실시간 위치 업데이트
-            _viewModel.PositionUpdated += (lat, lng) =>
+            // 1. 드론 실시간 위치 업데이트 
+            _viewModel.PositionUpdated += (lat, lng, heading) => //03/02
             {
                 Dispatcher.InvokeAsync(async () =>
                 {
                     if (_mapController != null)
-                        await _mapController.UpdateDroneLocation(lat, lng);
+                        await _mapController.UpdateDroneLocation(lat, lng, heading);
                 });
             };
 
