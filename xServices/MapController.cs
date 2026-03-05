@@ -26,12 +26,15 @@ namespace GCS_Project.Services
 
         // 드론의 위도와 경도를 받아 지도의 마커 위치를 갱신.
         // 드론 위치 업데이트
-        public async Task UpdateDroneLocation(double lat, double lng)
+        public async Task UpdateDroneLocation(double lat, double lng, double heading)
         {
-            if (_webView != null && _webView.CoreWebView2 != null)
+            if (_webView?.CoreWebView2 != null)
             {
-                // InvariantCulture를 사용하여 무조건 '.' 으로 소수점이 찍히게 강제합니다!
-                string script = $"updateLocation({lat.ToString(System.Globalization.CultureInfo.InvariantCulture)}, {lng.ToString(System.Globalization.CultureInfo.InvariantCulture)})";
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+
+                string script =
+                    $"updateLocation({lat.ToString(ci)}, {lng.ToString(ci)}, {heading.ToString(ci)})";
+
                 await _webView.ExecuteScriptAsync(script);
             }
         }
