@@ -1,13 +1,14 @@
-﻿using System;
-using System.IO;
-using System.Windows;
-using GCS_Project.Models;
+﻿using GCS_Project.Models;
 using GCS_Project.Services;
 using GCS_Project.ViewModels;
+using LibVLCSharp.Shared;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
-using LibVLCSharp.Shared;
+using System;
+using System.IO;
+using System.Windows;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 
 namespace GCS_Project
 {
@@ -181,7 +182,86 @@ namespace GCS_Project
         #endregion
 
 
-        #region [5. 이벤트 핸들러 (Event Handlers)]
+        #region [ 5. 수동 조종 (Manual Control) 변수 및 이벤트]
+
+        // 현재 조이스틱 상태를 기억할 변수 (Z:500은 제자리 고도 유지, 나머지는 0이 정지)
+        private short _joyPitch = 0;   // W, S
+        private short _joyRoll = 0;    // A, D
+        private short _joyThrust = 500;// Up, Down
+        private short _joyYaw = 0;     // Left, Right
+
+        // 1. 수동 조종 모드 켜기 (버튼 눌림)
+        private void ManualModeToggle_Checked(object sender, RoutedEventArgs e)
+        {
+            _viewModel?.ToggleManualControl(true);
+            ManualModeToggle.Background = System.Windows.Media.Brushes.LightGreen;
+        }
+
+        // 2. 수동 조종 모드 끄기 (버튼 해제)
+        private void ManualModeToggle_Unchecked(object sender, RoutedEventArgs e)
+        {
+            _viewModel?.ToggleManualControl(false);
+            ManualModeToggle.Background = System.Windows.Media.Brushes.LightGray;
+        }
+
+        // 3. 키보드를 눌렀을 때 (가속 페달 밟기)
+        private void Window_KeyDown(object sender, KeyEventArgs e)
+        {
+            // 꿀팁: 꾹 누르고 있을 때 이벤트가 수십 번 중복 발생하는 것을 막아줍니다!
+            if (e.IsRepeat) return;
+
+            bool isChanged = false;
+
+            switch (e.Key)
+            {
+                case Key.W: _joyPitch = 1000; isChanged = true; break;  // 전진
+                case Key.S: _joyPitch = -1000; isChanged = true; break; // 후진
+                case Key.A: _joyRoll = -1000; isChanged = true; break;  // 좌측 이동
+                case Key.D: _joyRoll = 1000; isChanged = true; break;   // 우측 이동
+
+                case Key.Up: _joyThrust = 1000; isChanged = true; break;  // 상승
+                case Key.Down: _joyThrust = 0; isChanged = true; break;   // 하강
+
+                case Key.Left: _joyYaw = -1000; isChanged = true; break;  // 좌회전
+                case Key.Right: _joyYaw = 1000; isChanged = true; break;  // 우회전
+            }
+
+            // 값이 바뀌었으면 뷰모델로 전송!
+            if (isChanged)
+            {
+                _viewModel?.UpdateJoystick(_joyPitch, _joyRoll, _joyThrust, _joyYaw);
+            }
+        }
+
+        // 4. 키보드에서 손을 뗐을 때 (브레이크 밟기 - 제자리 복귀)
+        private void Window_KeyUp(object sender, KeyEventArgs e)
+        {
+            bool isChanged = false;
+
+            switch (e.Key)
+            {
+                case Key.W:
+                case Key.S: _joyPitch = 0; isChanged = true; break; // 전후진 멈춤
+
+                case Key.A:
+                case Key.D: _joyRoll = 0; isChanged = true; break;  // 좌우 멈춤
+
+                case Key.Up:
+                case Key.Down: _joyThrust = 500; isChanged = true; break; // 고도 유지 (Hovering)
+
+                case Key.Left:
+                case Key.Right: _joyYaw = 0; isChanged = true; break; // 회전 멈춤
+            }
+
+            if (isChanged)
+            {
+                _viewModel?.UpdateJoystick(_joyPitch, _joyRoll, _joyThrust, _joyYaw);
+            }
+        }
+        #endregion
+
+
+        #region [6. 이벤트 핸들러 (Event Handlers)]
         /// <summary>
         /// 지도(JS)에서 클릭하여 발생한 이벤트를 C# ViewModel로 전달합니다.
         /// </summary>

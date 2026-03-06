@@ -3,7 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
-        Title="GCS Dashboard" Height="850" Width="1600" Background="#1A1A1A">
+        Title="GCS Dashboard" Height="850" Width="1600" Background="#1A1A1A"
+        KeyDown="Window_KeyDown"
+        KeyUp="Window_KeyUp">
     <Window.Resources>
         <Style x:Key="BaseText" TargetType="TextBlock">
             <Setter Property="FontWeight" Value="Bold"/>
@@ -358,6 +360,11 @@
                     <Button Content="Return" Command="{Binding RtlCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="Arm" Command="{Binding ArmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="Disarm" Command="{Binding DisarmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
+
+                    <ToggleButton x:Name="ManualModeToggle" Content="수동 조종 (MANUAL)" 
+                          Background="#34495E" Foreground="White" FontWeight="Bold" Margin="2"
+                          Checked="ManualModeToggle_Checked" 
+                          Unchecked="ManualModeToggle_Unchecked"/>
                 </UniformGrid>
 
                 <Border Grid.Row="2" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,10">
