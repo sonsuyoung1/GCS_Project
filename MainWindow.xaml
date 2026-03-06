@@ -64,19 +64,29 @@
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-
+<!-- 03/05 수정(클릭 좌표 레이어 추가)-->
             <Border Grid.Row="1" Background="#0B1220" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="4" Margin="0,0,0,6">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
+
                     <TextBlock Text="Drone Video" Foreground="#3B82F6" FontWeight="SemiBold" FontSize="14" Margin="5,2"/>
-                    <vlc:VideoView Grid.Row="1" x:Name="VideoView1" Background="Black"/>
+
+                    <Grid Grid.Row="1">
+                        <vlc:VideoView x:Name="VideoView1" Background="Black"/>
+
+                        <Canvas x:Name="BboxOverlay"
+                                Background="Transparent"
+                                Panel.ZIndex="10"
+                                IsHitTestVisible="True"
+                                MouseLeftButtonDown="BboxOverlay_MouseLeftButtonDown"
+                                SizeChanged="BboxOverlay_SizeChanged"/>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>
-
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="50"/>
@@ -367,13 +377,14 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <TextBlock Text="DETECTED TARGETS" Foreground="#3B82F6" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
+                        <!-- DataGrid는 MavlinkServicef를 직접 모르게-->
                         <DataGrid Grid.Row="1" 
-                          ItemsSource="{Binding MavlinkService.DetectedTargets}" 
-                          SelectedItem="{Binding SelectedTarget, Mode=TwoWay}" 
-                          AutoGenerateColumns="False" IsReadOnly="True" 
-                          Background="Transparent" Foreground="White" 
-                          RowBackground="Transparent" GridLinesVisibility="None" 
-                          SelectionMode="Single" BorderThickness="0">
+                                  ItemsSource="{Binding DetectedTargets}" 
+                                  SelectedItem="{Binding SelectedTarget, Mode=TwoWay}" 
+                                  AutoGenerateColumns="False" IsReadOnly="True" 
+                                  Background="Transparent" Foreground="White" 
+                                  RowBackground="Transparent" GridLinesVisibility="None" 
+                                  SelectionMode="Single" BorderThickness="0">
 
                             <DataGrid.Resources>
                                 <Style TargetType="DataGridColumnHeader">
