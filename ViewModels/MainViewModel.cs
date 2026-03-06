@@ -110,6 +110,7 @@ namespace GCS_Project.ViewModels
         #region [4. 이벤트 (View 통신용)]
         public event Action? UndoWaypointRequested;
         public event Action? ClearWaypointsRequested;
+        public event Action? AllClearRequested;
         public event Action<double, double, double>? PositionUpdated;
         public event Action<double, double>? TakeoffPointSet;
         public event Action<double, double>? PersonDetectedOnMap;
@@ -401,7 +402,7 @@ namespace GCS_Project.ViewModels
                 FlightMode = MODE_IDLE;
 
                 await Task.Run(() => _mavlinkService.ClearWaypoints());
-                ClearWaypointsRequested?.Invoke();
+                AllClearRequested?.Invoke();
 
                 ChatLog += "\n[명령] 착륙 명령 전송 및 목적지 초기화";
             }
@@ -420,7 +421,7 @@ namespace GCS_Project.ViewModels
                 ChatLog += "\n[명령] 복귀(RTL) 명령 전송.";
 
                 await Task.Run(() => _mavlinkService.ClearWaypoints());
-                ClearWaypointsRequested?.Invoke();
+                AllClearRequested?.Invoke();
             }
             catch (Exception ex)
             {

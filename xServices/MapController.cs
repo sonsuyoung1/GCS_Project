@@ -43,19 +43,22 @@ namespace GCS_Project.Services
         public async Task UndoLastWaypointOnMap()
         {
             if (_webView?.CoreWebView2 != null)
-            {
                 await _webView.ExecuteScriptAsync("undoLastWaypoint()");
-            }
         }
 
         // 지도상의 모든 미션 경로 및 마커 초기화
         public async Task ClearAllWaypointsOnMap()
         {
             if (_webView?.CoreWebView2 != null)
-            {
                 await _webView.ExecuteScriptAsync("clearAllWaypoints()");
-            }
         }
+
+        public async Task ClearAllOnMap()
+        {
+            if (_webView?.CoreWebView2 != null) 
+                await _webView.ExecuteScriptAsync("clearAllMapElements()");
+        }
+
 
         public async Task UpdateTargetOnMap(int id, double lat, double lng, string type, bool isTracked)
         {
