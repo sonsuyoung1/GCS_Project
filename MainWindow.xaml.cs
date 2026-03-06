@@ -8,6 +8,8 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using LibVLCSharp.Shared;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Controls;
 
 namespace GCS_Project
 {
@@ -18,6 +20,13 @@ namespace GCS_Project
         private MainViewModel? _viewModel;
         private LibVLC? _libVLC;
         private LibVLCSharp.Shared.MediaPlayer? _mp1;
+        // ===== Video Frame Size (YOLO 입력 해상도) =====
+        private const double FRAME_WIDTH = 1920.0;
+        private const double FRAME_HEIGHT = 1080.0;
+        // 캔버스(화면) <-> 프레임(1920x1080) 변환용
+        private double _scale = 1.0;
+        private double _offsetX = 0.0;
+        private double _offsetY = 0.0;
         #endregion
 
 
@@ -60,7 +69,9 @@ namespace GCS_Project
             }
             await InitializeMapAsync();
 
-            // PlayRtpStream(_mp1);
+            PlayRtpStream(_mp1);
+
+            RecalcOverlayTransform(); // 03/05 추가
         }
 
         private async Task InitializeMapAsync()
@@ -247,12 +258,122 @@ namespace GCS_Project
         {
             try
             {
+                _viewModel?.Dispose();
+
                 _mp1?.Stop(); 
                 _mp1?.Dispose(); 
                 _libVLC?.Dispose();
             }
             catch { }
             base.OnClosed(e);
+        }
+        //03/05 수정 
+        // Canvas 크기 바뀔 때(창모드/전체화면/비율 변경 포함) 변환값 재계산
+        private void BboxOverlay_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            RecalcOverlayTransform();
+        }
+
+        // 영상 위 클릭하면 좌표 확인 (지금 단계 목표)
+        private void BboxOverlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var p = e.GetPosition(BboxOverlay);
+
+            // 변환값 최신화(처음 클릭 시 ActualWidth/Height 반영 안 되는 경우 방지)
+            RecalcOverlayTransform();
+
+            var framePt = CanvasToFrame(p.X, p.Y);
+
+            if (framePt == null)
+            {
+                MessageBox.Show($"canvas=({p.X:0.0}, {p.Y:0.0})\nframe=LETTERBOX(무시)");
+                return;
+            }
+
+            var (fx, fy) = framePt.Value;
+
+            // ===== [여기부터 4단계: hit-test로 객체 선택] =====
+            if (_viewModel == null)
+            {
+                MessageBox.Show("ViewModel 없음");
+                return;
+            }
+
+            // MainViewModel이 관리하는 공식 타겟 목록 사용
+            var targets = _viewModel.DetectedTargets;
+
+            if (targets.Count == 0)
+            {
+                MessageBox.Show($"frame=({fx:0.0}, {fy:0.0})\n탐지된 타겟 없음");
+                return;
+            }
+
+            DetectedTarget? hit = null;
+
+            foreach (var t in targets)
+            {
+                // bbox가 center(x,y), size(w,h)라서 left/top/right/bottom으로 바꿔 판정
+                double left = t.Bx - (t.Bw / 2.0);
+                double right = t.Bx + (t.Bw / 2.0);
+                double top = t.By - (t.Bh / 2.0);
+                double bottom = t.By + (t.Bh / 2.0);
+
+                if (fx >= left && fx <= right && fy >= top && fy <= bottom)
+                {
+                    hit = t;
+                    break;
+                }
+            }
+
+            if (hit == null)
+            {
+                MessageBox.Show($"frame=({fx:0.0}, {fy:0.0})\n박스 안에 없음");
+                return;
+            }
+
+            // 선택 타겟 지정 (DataGrid 선택 연동)
+            _viewModel.SelectedTarget = hit;
+
+            // 선택된 것만 추적 표시
+            foreach (var t in targets)
+                t.IsBeingTracked = (t == hit);
+
+            MessageBox.Show(
+                $"SELECTED\nID={hit.ID}\nTYPE={hit.TargetType}\n" +
+                $"frame=({fx:0.0}, {fy:0.0})\n" +
+                $"bbox(cx={hit.Bx:0.0}, cy={hit.By:0.0}, w={hit.Bw:0.0}, h={hit.Bh:0.0})"
+            );
+        }
+
+        private void RecalcOverlayTransform()
+        {
+            double canvasW = BboxOverlay.ActualWidth;
+            double canvasH = BboxOverlay.ActualHeight;
+
+            if (canvasW <= 1 || canvasH <= 1) return;
+
+            _scale = Math.Min(canvasW / FRAME_WIDTH, canvasH / FRAME_HEIGHT);
+
+            double viewW = FRAME_WIDTH * _scale;
+            double viewH = FRAME_HEIGHT * _scale;
+
+            _offsetX = (canvasW - viewW) / 2.0;
+            _offsetY = (canvasH - viewH) / 2.0;
+        }
+
+        private (double fx, double fy)? CanvasToFrame(double cx, double cy)
+        {
+            double viewW = FRAME_WIDTH * _scale;
+            double viewH = FRAME_HEIGHT * _scale;
+
+            if (cx < _offsetX || cx > _offsetX + viewW ||
+                cy < _offsetY || cy > _offsetY + viewH)
+                return null;
+
+            double fx = (cx - _offsetX) / _scale;
+            double fy = (cy - _offsetY) / _scale;
+
+            return (fx, fy);
         }
         #endregion
     }

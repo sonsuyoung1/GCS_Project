@@ -5,6 +5,8 @@ using System;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Input;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace GCS_Project.ViewModels
 {
@@ -12,6 +14,8 @@ namespace GCS_Project.ViewModels
     {
         #region [1. 필드 (Fields)]
         private readonly MavlinkService _mavlinkService;
+        private readonly YoloMetaUdpService _yoloMetaUdpService;
+        private readonly ObservableCollection<DetectedTarget> _detectedTargets = new();
         private DetectedTarget? _selectedTarget;
         private System.Timers.Timer _targetLostTimer;
         private string _flightMode = "IDLE";
@@ -35,6 +39,10 @@ namespace GCS_Project.ViewModels
         #region [2. 속성 (Properties)]
         public MavlinkService MavlinkService => _mavlinkService;
         public DroneState Drone => _mavlinkService.CurrentState;
+
+        // 현재는 MavlinkService의 타겟 리스트를 그대로 노출
+        // 나중에 YoloMetaUdpService로 바꿔도 View/XAML 수정 없이 유지하기 위한 중간 창구
+        public ObservableCollection<DetectedTarget> DetectedTargets => _detectedTargets;
 
         // MavlinkService의 리스트를 직접 참조하도록 변경하여 메모리 중복 방지
         // public ObservableCollection<DetectedTarget> DetectedTargets => _mavlinkService.DetectedTargets;
@@ -119,7 +127,7 @@ namespace GCS_Project.ViewModels
         public MainViewModel()
         {
             _mavlinkService = new MavlinkService();
-
+            _yoloMetaUdpService = new YoloMetaUdpService(5001);
             // 커맨드 초기화 (로직 분리)
             StartMissionCommand = new RelayCommand(ExecuteStartMission, () => IsMissionStartEnabled);
             ArmCommand = new RelayCommand(ExecuteArm, () => IsArmEnabled);
@@ -174,6 +182,8 @@ namespace GCS_Project.ViewModels
                 // 2. 인자는 깔끔하게 비웁니다! (서비스의 기본값 사용)
                 await _mavlinkService.StartAsync();
                 ChatLog += "\n[시스템] MAVLink 연결 성공";
+                await _yoloMetaUdpService.StartAsync();
+                ChatLog += "\n[시스템] YOLO UDP 메타 수신 시작";
             }
             catch (Exception ex)
             {
@@ -216,6 +226,22 @@ namespace GCS_Project.ViewModels
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
                     ChatLog += $"\n{message}";
+                });
+            };
+
+            _yoloMetaUdpService.OnLogReceived += (message) =>
+            {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    ChatLog += $"\n{message}";
+                });
+            };
+
+            _yoloMetaUdpService.OnTargetsReceived += (targets) =>
+            {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    ApplyDetectedTargets(targets);
                 });
             };
 
@@ -302,6 +328,40 @@ namespace GCS_Project.ViewModels
                 FlightMode = MODE_IDLE;
                 _isFlyingHigh = false;
                 ChatLog += "\n[시스템] 고도 저하 감지. 대기 상태로 전환합니다.";
+            }
+        }
+        private void ApplyDetectedTargets(List<DetectedTarget> targets)
+        {
+            _detectedTargets.Clear();
+
+            foreach (var target in targets)
+            {
+                _detectedTargets.Add(target);
+            }
+
+            // 현재 선택된 타겟이 새 프레임에도 존재하는지 확인
+            if (SelectedTarget != null)
+            {
+                DetectedTarget? matched = null;
+
+                foreach (var t in _detectedTargets)
+                {
+                    if (t.ID == SelectedTarget.ID)
+                    {
+                        matched = t;
+                        break;
+                    }
+                }
+
+                if (matched != null)
+                {
+                    SelectedTarget = matched;
+                    matched.IsBeingTracked = true;
+                }
+                else
+                {
+                    SelectedTarget = null;
+                }
             }
         }
         #endregion
@@ -526,6 +586,7 @@ namespace GCS_Project.ViewModels
             _targetLostTimer?.Stop();
             _targetLostTimer?.Dispose();
             _mavlinkService?.StopAsync();
+            _yoloMetaUdpService?.StopAsync();
         }
     }
 }

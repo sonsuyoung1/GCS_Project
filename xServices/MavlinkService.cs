@@ -7,6 +7,7 @@ using GCS_Project.Models;
 using ObservableCollections;
 using R3;
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.Metrics;
@@ -42,7 +43,6 @@ namespace GCS_Project.xServices
 
         #region [2. 데이터 속성 및 상태 (State & Data)]
         public DroneState CurrentState { get; } = new DroneState();
-        // public ObservableCollection<DetectedTarget> DetectedTargets { get; } = new();
         #endregion
 
 
@@ -137,7 +137,7 @@ namespace GCS_Project.xServices
             // 6) 데이터 스트림 연결
             HookTelemetry(_drone);
             OnLogReceived?.Invoke("[MAV] 텔레메트리가 연결됨");
-            // HookCustomMessages(_router); // YOLO 전용
+            //HookCustomMessages(_router); // YOLO 전용
             HookCommandAck(_drone);
             StartLinkWatchdog();
 
@@ -363,69 +363,6 @@ namespace GCS_Project.xServices
                 }
             });
         }
-
-        // 아래 주석 친 부분이 yolo로 객체 탐지하여 마브링크 프로토콜로 받아 파싱하기 위한 로직임.
-        /*private void HookCustomMessages(IProtocolRouter router)
-        {
-            // YOLO 타겟 메시지 (ID 250)
-            router.OnRxMessage
-                .OfType<IProtocolMessage, MavlinkMessage>()
-                .Where(m => m.Id == 250)
-                .Subscribe(m =>
-                {
-                    // 1. IPayload 상자를 가져옵니다.
-                    var payload = m.GetPayload();
-
-                    // 2. 상자의 크기만큼 빈 바이트 바구니(버퍼)를 준비합니다.
-                    byte[] buffer = new byte[payload.GetMaxByteSize()];
-                    var span = new Span<byte>(buffer);
-
-                    // 3. 상자 안의 내용물(순수 바이트 데이터)을 바구니에 쏟아 붓습니다!
-                    payload.Serialize(ref span);
-
-                    // 4. 이제 완벽한 바이트 배열이 된 buffer를 파싱 메서드에 넘깁니다.
-                    // (byte[]는 자동으로 ReadOnlySpan<byte>로 변환되어 찰떡같이 들어갑니다)
-                    ParseYoloPacket(buffer);
-                })
-                .AddTo(_subs);
-        }
-
-        private void ParseYoloPacket(ReadOnlySpan<byte> data)
-        {
-            // 1단계 안전장치: 데이터 길이 검사 (방어적 프로그래밍)
-            // ID(1) + Lat(4) + Lng(4) = 최소 9바이트가 필요합니다.
-            // 통신 불량으로 5바이트만 왔는데 자르려고 하면 프로그램이 그 자리에서 뻗어버립니다(Crash).
-            if (data.Length < 9)
-            {
-                OnLogReceived?.Invoke($"[경고] 잘못된 YOLO 패킷 수신 (길이: {data.Length})");
-                return; // 데이터가 잘렸으면 과감하게 버립니다.
-            }
-
-            int id = data[0];
-
-            // 2단계 안전장치: 네트워크 바이트 순서(Endian) 명시
-            // BitConverter 대신 BinaryPrimitives를 사용하여 무조건 '리틀 엔디안'으로 읽도록 강제합니다.
-            double lat = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(1, 4)) / 1E7;
-            double lng = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(5, 4)) / 1E7;
-
-            // 3단계 안전장치: UI 스레드 멈춤 방지 (BeginInvoke)
-            // Invoke는 UI 업데이트가 끝날 때까지 통신 수신을 멈추고 기다립니다.
-            // 통신이 1초에 수십 번씩 올 때는 BeginInvoke(비동기)를 써야 GCS 화면이 뚝뚝 끊기지 않습니다.
-            Application.Current.Dispatcher.BeginInvoke(() => {
-                var target = DetectedTargets.FirstOrDefault(t => t.ID == id);
-                bool isTracked = target?.IsBeingTracked ?? false;
-
-                if (target != null)
-                {
-                    target.Lat = lat; target.Lng = lng;
-                }
-                else
-                {
-                    DetectedTargets.Add(new DetectedTarget { ID = id, Lat = lat, Lng = lng, TargetType = "Person" });
-                }
-                OnTargetLocationUpdated?.Invoke(id, lat, lng, "Person", isTracked);
-            });
-        }*/
         #endregion
 
 
