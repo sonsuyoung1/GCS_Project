@@ -101,8 +101,6 @@
             [36.6912, 126.5828],
             { icon: createDroneIcon(droneHeadingDeg) }
         ).addTo(map);
-        var pathPoints = [];
-        var dronePath = L.polyline([], { color: '#00ff00', weight: 3 }).addTo(map);
 
         var targetMarkers = {}; //  핵심: ID별 타겟 마커 저장소 (Dictionary)
         var waypointMarkers = [];
@@ -120,9 +118,6 @@
                 droneHeadingDeg = headingDeg;
                 droneMarker.setIcon(createDroneIcon(droneHeadingDeg));
             }
-
-            pathPoints.push(newLatLng);
-            dronePath.setLatLngs(pathPoints);
         }
 
 
@@ -220,8 +215,6 @@
             // 타겟 마커들도 모두 제거
             Object.values(targetMarkers).forEach(m => map.removeLayer(m));
             targetMarkers = {};
-            dronePath.setLatLngs([]);
-            pathPoints = [];
         }
 
     </script>

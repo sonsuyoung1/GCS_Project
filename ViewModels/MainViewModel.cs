@@ -1,4 +1,5 @@
 ﻿using Asv.Mavlink;
+using Asv.Mavlink.Minimal;
 using GCS_Project.Models;
 using GCS_Project.xServices;
 using System;
@@ -489,8 +490,8 @@ namespace GCS_Project.ViewModels
             }
         }
 
-        // 10. 객체 추적 중단
-        /*private async void ExecuteStopTracking()
+        /*// 10. 객체 추적 중단
+        private async void ExecuteStopTracking()
         {
             try
             {
@@ -505,7 +506,32 @@ namespace GCS_Project.ViewModels
                 ChatLog += $"\n[오류] 추적 중단 실패: {ex.Message}";
             }
         }*/
+
+
+        // 11. 수동 조종 엔진 켜기/끄기
+        public async void ToggleManualControl(bool turnOn)
+        {
+            if (turnOn)
+            {
+                // Task.Run 대신 기존처럼 await를 써서 깔끔하게 대기!
+                await _mavlinkService.SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 3);
+
+                _mavlinkService.StartManualControl();
+                FlightMode = "MANUAL";
+            }
+            else
+            {
+                _mavlinkService.StopManualControl();
+            }
+        }
+
+        // 12. 키보드 눌림/뗌에 따라 조이스틱 값 전달
+        public void UpdateJoystick(short pitch, short roll, short thrust, short yaw)
+        {
+            _mavlinkService.SetJoystick(pitch, roll, thrust, yaw);
+        }
         #endregion
+
 
         private void NotifyCommandStates()
         {
