@@ -152,17 +152,7 @@ namespace GCS_Project
                 });
             };
 
-            /*// 3. YOLO 다중 타겟 실시간 업데이트 및 이동
-            // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.
-            _viewModel.MavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
-            {
-                Dispatcher.Invoke(async () =>
-                {
-                    await _mapController.UpdateTargetOnMap(id, lat, lng, type, isTracked);
-                });
-            };*/
-
-            // 4. 경로(웨이포인트) 관리
+            // 3. 경로(웨이포인트) 관리
             _viewModel.UndoWaypointRequested += async () =>
             {
                 // UI 스레드에서 실행되도록 보장
@@ -175,9 +165,28 @@ namespace GCS_Project
             {
                 await Dispatcher.InvokeAsync(async () => {
                     await _mapController.ClearAllWaypointsOnMap();
-                    await mapWebView.ExecuteScriptAsync("clearAllMapElements()");
                 });
             };
+
+            _viewModel.AllClearRequested += async () =>
+            {
+                await Dispatcher.InvokeAsync(async () => {
+                    await _mapController.ClearAllOnMap();
+                });
+            };
+            
+
+            /*// 4. YOLO 다중 타겟 실시간 업데이트 및 이동
+            // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.
+            _viewModel.MavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
+            {
+                Dispatcher.Invoke(async () =>
+                {
+                    await _mapController.UpdateTargetOnMap(id, lat, lng, type, isTracked);
+                });
+            };*/
+
+
         }
         #endregion
 
