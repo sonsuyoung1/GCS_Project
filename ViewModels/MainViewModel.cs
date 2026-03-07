@@ -514,15 +514,21 @@ namespace GCS_Project.ViewModels
         {
             if (turnOn)
             {
-                // Task.Run 대신 기존처럼 await를 써서 깔끔하게 대기!
+                // 1. 드론을 수동/포지션 모드(3)로 변경
                 await _mavlinkService.SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 3);
-
+                // 2. 가상 조이스틱 엔진 가동
                 _mavlinkService.StartManualControl();
+                // 3. UI 글자 업데이트
                 FlightMode = "MANUAL";
             }
             else
             {
+                // 1. 가상 조이스틱 엔진부터 확실하게 정지
                 _mavlinkService.StopManualControl();
+                // 2. 드론을 다시 컴퓨터가 조종하는 AUTO 모드(4)로 복귀!
+                await _mavlinkService.SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 4);
+                // 3. UI 글자 업데이트
+                FlightMode = "TAKEOFF";
             }
         }
 
