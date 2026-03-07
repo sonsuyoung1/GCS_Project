@@ -38,14 +38,6 @@ namespace GCS_Project
             _mp1 = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
             VideoView1.MediaPlayer = _mp1;
 
-            this.LocationChanged += (s, e) =>
-            {
-                // 1. 인공지평선/나침반 팝업 갱신
-                double offset1 = myPopup.HorizontalOffset;
-                myPopup.HorizontalOffset = offset1 + 0.01;
-                myPopup.HorizontalOffset = offset1;
-            };
-
             this.Loaded += MainWindow_Loaded;
         }
         #endregion
