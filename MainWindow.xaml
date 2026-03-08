@@ -46,14 +46,14 @@
                 </Setter.Value>
             </Setter>
         </Style>
-        
+
 
         <Style x:Key="GcsToggleButton" TargetType="ToggleButton">
             <Setter Property="Height" Value="45"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="Margin" Value="4"/>
-            <Setter Property="Background" Value="#34495E"/>
+            <Setter Property="Background" Value="#E74C3C"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
@@ -65,8 +65,8 @@
                                 <Setter TargetName="border" Property="Opacity" Value="0.8"/>
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#E74C3C"/>
-                                <Setter Property="Foreground" Value="Yellow"/>
+                                <Setter TargetName="border" Property="Background" Value="#34495E"/>
+                                <Setter Property="Foreground" Value="White"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="border" Property="Background" Value="#4A5568"/>
@@ -230,27 +230,65 @@
             </Grid>
 
             <Border Grid.Row="2" Background="#1A1A1A" BorderBrush="#34495E" BorderThickness="0,2,0,0">
-                <UniformGrid Columns="5" Margin="10,0">
+                <UniformGrid Columns="7" Margin="10,0">
+
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Lattitude" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Latitude, StringFormat={}{0:F5}}" Style="{StaticResource ValueText}"/>
+                        <TextBlock Text="Pitch" Style="{StaticResource LabelText}"/>
+                        <TextBlock Text="{Binding Drone.Pitch, StringFormat={}{0:F1}°}" Style="{StaticResource ValueText}"/>
                     </StackPanel>
+
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Longitude" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Longitude, StringFormat={}{0:F5}}" Style="{StaticResource ValueText}"/>
+                        <TextBlock Text="Roll" Style="{StaticResource LabelText}"/>
+                        <TextBlock Text="{Binding Drone.Roll, StringFormat={}{0:F1}°}" Style="{StaticResource ValueText}"/>
                     </StackPanel>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Yaw" Style="{StaticResource LabelText}"/>
+                        <TextBlock Text="{Binding Drone.Yaw, StringFormat={}{0:F1}°}" Style="{StaticResource ValueText}"/>
+                    </StackPanel>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Cur Altitude" Style="{StaticResource LabelText}"/>
+                        <TextBlock Text="{Binding Drone.Altitude, StringFormat={}{0:F1} m}" Style="{StaticResource ValueText}" Foreground="#2ECC71"/>
+                    </StackPanel>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Cur Speed" Style="{StaticResource LabelText}"/>
+                        <TextBlock Text="{Binding Drone.Speed, StringFormat={}{0:F1} m/s}" Style="{StaticResource ValueText}" Foreground="#3498DB"/>
+                    </StackPanel>
+
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Altitude" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Altitude, StringFormat={}{0:F1}m}" Style="{StaticResource ValueText}" Foreground="#2ECC71"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">
+                            <Button Content="-" Command="{Binding DecreaseAltitudeCommand}" 
+                        Width="25" Height="25" Background="#34495E" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
+
+                            <TextBox Text="{Binding Drone.TargetAltitude, UpdateSourceTrigger=PropertyChanged}" 
+                         Width="50" Height="25" Background="Transparent" Foreground="#2ECC71" 
+                         FontWeight="Bold" FontSize="16" TextAlignment="Center" 
+                         BorderThickness="0,0,0,1" BorderBrush="#4A5568" Margin="5,0"/>
+
+                            <Button Content="+" Command="{Binding IncreaseAltitudeCommand}" 
+                        Width="25" Height="25" Background="#34495E" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
+                        </StackPanel>
                     </StackPanel>
+
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Speed" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Speed}" Style="{StaticResource ValueText}" Foreground="#3498DB"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">
+                            <Button Content="-" Command="{Binding DecreaseSpeedCommand}" 
+                        Width="25" Height="25" Background="#34495E" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
+
+                            <TextBox Text="{Binding Drone.TargetSpeed, UpdateSourceTrigger=PropertyChanged}" 
+                         Width="50" Height="25" Background="Transparent" Foreground="#3498DB" 
+                         FontWeight="Bold" FontSize="16" TextAlignment="Center" 
+                         BorderThickness="0,0,0,1" BorderBrush="#4A5568" Margin="5,0"/>
+
+                            <Button Content="+" Command="{Binding IncreaseSpeedCommand}" 
+                        Width="25" Height="25" Background="#34495E" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
+                        </StackPanel>
                     </StackPanel>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Waypoint" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding MissionProgress, FallbackValue='0 / 0'}" Style="{StaticResource ValueText}" Foreground="#E67E22"/>
-                    </StackPanel>
+
                 </UniformGrid>
             </Border>
         </Grid>
@@ -277,11 +315,11 @@
                     <Button Content="Arm" Command="{Binding ArmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="Disarm" Command="{Binding DisarmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
 
-                    <ToggleButton x:Name="ManualModeToggle" Content="수동 조종 (MANUAL)" 
-                                  Background="#34495E" Foreground="White" FontWeight="Bold" Margin="2"
-                                  Style="{StaticResource GcsToggleButton}"
-                                  Checked="ManualModeToggle_Checked" 
-                                  Unchecked="ManualModeToggle_Unchecked"/>
+                    <ToggleButton x:Name="ManualModeToggle" 
+                                          Content="Manual Mode" 
+                                          Style="{StaticResource GcsToggleButton}"
+                                          Checked="ManualModeToggle_Checked" 
+                                          Unchecked="ManualModeToggle_Unchecked"/>
                 </UniformGrid>
 
                 <Border Grid.Row="2" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,10">
