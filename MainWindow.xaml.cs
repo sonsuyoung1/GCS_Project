@@ -11,6 +11,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Controls;
 using System.ComponentModel;
+using System.Linq;
 
 namespace GCS_Project
 {
@@ -29,6 +30,8 @@ namespace GCS_Project
 
         private bool _overlayDirty = false;
         private System.Windows.Threading.DispatcherTimer? _overlayTimer;
+
+        private int? _selectedTargetId = null;
         #endregion
 
 
@@ -104,12 +107,10 @@ namespace GCS_Project
             HookOverlayEvents();
 
             UpdateOverlayBounds();
-            _overlayWindow.DrawTestBox();
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 UpdateOverlayBounds();
-                _overlayWindow?.DrawTestBox();
             }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
@@ -199,10 +200,16 @@ namespace GCS_Project
 
             if (VideoView1.ActualWidth <= 1 || VideoView1.ActualHeight <= 1) return;
 
-            var topLeft = VideoView1.PointToScreen(new Point(0, 0));
+            var source = PresentationSource.FromVisual(this);
+            if (source?.CompositionTarget == null) return;
 
-            _overlayWindow.Left = topLeft.X;
-            _overlayWindow.Top = topLeft.Y;
+            var topLeft = VideoView1.PointToScreen(new Point(0, 0));
+            var m = source.CompositionTarget.TransformFromDevice;
+
+            var dipTopLeft = m.Transform(topLeft);
+
+            _overlayWindow.Left = dipTopLeft.X;
+            _overlayWindow.Top = dipTopLeft.Y;
             _overlayWindow.Width = VideoView1.ActualWidth;
             _overlayWindow.Height = VideoView1.ActualHeight;
         }
@@ -365,7 +372,7 @@ namespace GCS_Project
             RedrawBboxes();
         }
 
-        // 영상 위 클릭하면 좌표 확인 (지금 단계 목표)
+        // 영상 위 클릭
         private void OverlayCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (_overlayWindow == null || _viewModel == null)
@@ -375,22 +382,14 @@ namespace GCS_Project
             var p = e.GetPosition(canvas);
 
             var framePt = CanvasToFrame(p.X, p.Y, canvas.ActualWidth, canvas.ActualHeight);
-
             if (framePt == null)
-            {
-                MessageBox.Show($"canvas=({p.X:0.0}, {p.Y:0.0})\nframe=LETTERBOX(무시)");
-                return;
-            }
+                return; // 박스 영역 밖 / letterbox면 아무 반응 없음
 
             var (fx, fy) = framePt.Value;
-
             var targets = _viewModel.DetectedTargets;
 
             if (targets.Count == 0)
-            {
-                MessageBox.Show($"frame=({fx:0.0}, {fy:0.0})\n탐지된 타겟 없음");
-                return;
-            }
+                return; // 타겟 없으면 아무 반응 없음
 
             DetectedTarget? hit = null;
             double bestArea = double.MaxValue;
@@ -416,22 +415,18 @@ namespace GCS_Project
 
             if (hit == null)
             {
-                MessageBox.Show($"frame=({fx:0.0}, {fy:0.0})\n박스 안에 없음");
+                // 빈 영상 화면 클릭시 선택 초기화
+                _selectedTargetId = null;
+                _viewModel.SelectedTarget = null;
+
+                RedrawBboxes();
                 return;
             }
 
             _viewModel.SelectedTarget = hit;
-
-            foreach (var t in targets)
-                t.IsBeingTracked = (t == hit);
+            _selectedTargetId = hit.ID;
 
             RedrawBboxes();
-
-            MessageBox.Show(
-                $"SELECTED\nID={hit.ID}\nTYPE={hit.TargetType}\n" +
-                $"frame=({fx:0.0}, {fy:0.0})\n" +
-                $"bbox(cx={hit.Bx:0.0}, cy={hit.By:0.0}, w={hit.Bw:0.0}, h={hit.Bh:0.0})"
-            );
         }
 
         private (double fx, double fy)? CanvasToFrame(double cx, double cy, double canvasW, double canvasH)
@@ -486,6 +481,16 @@ namespace GCS_Project
 
             if (canvasW <= 1 || canvasH <= 1)
                 return;
+            // 객체 사라지면 선택 초기화
+            if (_selectedTargetId.HasValue)
+            {
+                bool exists = _viewModel.DetectedTargets.Any(t => t.ID == _selectedTargetId.Value);
+                if (!exists)
+                {
+                    _selectedTargetId = null;
+                    _viewModel.SelectedTarget = null;
+                }
+            }
 
             foreach (var t in _viewModel.DetectedTargets)
             {
@@ -513,14 +518,16 @@ namespace GCS_Project
                 if (rectWidth <= 1 || rectHeight <= 1)
                     continue;
 
+                bool selected = (_selectedTargetId.HasValue && t.ID == _selectedTargetId.Value);
+
                 var rect = new System.Windows.Shapes.Rectangle
                 {
                     Width = rectWidth,
                     Height = rectHeight,
-                    StrokeThickness = t.IsBeingTracked ? 3 : 2,
-                    Stroke = t.IsBeingTracked
-                        ? System.Windows.Media.Brushes.Lime
-                        : System.Windows.Media.Brushes.Red,
+                    StrokeThickness = selected ? 3 : 2,
+                    Stroke = selected
+                        ? System.Windows.Media.Brushes.Red
+                        : System.Windows.Media.Brushes.Lime,
                     Fill = System.Windows.Media.Brushes.Transparent
                 };
 
