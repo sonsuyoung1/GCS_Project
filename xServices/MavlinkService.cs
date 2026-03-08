@@ -293,7 +293,7 @@ namespace GCS_Project.xServices
                     .Subscribe(packet => {
                         CurrentState.Roll = packet.Payload.Roll * (180.0 / Math.PI);
                         CurrentState.Pitch = packet.Payload.Pitch * (180.0 / Math.PI);
-                        CurrentState.Heading = (packet.Payload.Yaw * (180.0 / Math.PI) + 360) % 360;
+                        CurrentState.Yaw = (packet.Payload.Yaw * (180.0 / Math.PI) + 360) % 360;
                         OnDataUpdated?.Invoke(CurrentState);
                     })
                     .AddTo(_subs);
@@ -501,7 +501,7 @@ namespace GCS_Project.xServices
         /// <summary>
         /// 지정된 고도로 이륙 명령(Takeoff)을 전송합니다.
         /// </summary>
-        public async Task Takeoff(float altitude)
+        public async Task Takeoff(float alt)
         {
             // 1. 안전장치: 드론 객체와 통신 상태(IsConnected) 꼼꼼하게 확인
             if (_drone == null || !CurrentState.IsConnected)
@@ -516,7 +516,7 @@ namespace GCS_Project.xServices
             // 2. 명령 전송 및 에러 방어막
             try
             {
-                OnLogReceived?.Invoke($"[명령] 이륙 시도 (목표 고도: {altitude}m)...");
+                OnLogReceived?.Invoke($"[명령] 이륙 시도 (목표 고도: {alt}m)...");
 
                 await SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 4);
 
@@ -528,7 +528,7 @@ namespace GCS_Project.xServices
                 await cmd.SendCommandLong(
                     MavCmd.MavCmdNavTakeoff,
                     float.NaN, float.NaN, float.NaN, float.NaN, float.NaN, float.NaN,
-                    altitude,
+                    alt,
                     _cts?.Token ?? CancellationToken.None
                 );
 
@@ -671,6 +671,57 @@ namespace GCS_Project.xServices
                 OnLogReceived?.Invoke($"[오류] 시동 끄기(Disarm) 명령 전송 실패: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// 비행 중 실시간으로 기체의 목표 이동 속도를 변경합니다.
+        /// </summary>
+        public async Task ChangeTargetSpeed(float targetSpeed)
+        {
+            // 안전장치 확인
+            if (_drone == null || !CurrentState.IsConnected) return;
+
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null) return;
+
+            try
+            {
+                // MavCmdDoChangeSpeed 전송
+                // Param1: 1 (Ground Speed, 멀티로터용)
+                // Param2: 목표 속도 (m/s)
+                // Param3: Throttle (-1은 변경 안 함 유지)
+                await cmd.SendCommandLong(
+                    MavCmd.MavCmdDoChangeSpeed,
+                    1f, targetSpeed, -1f, 0f, 0f, 0f, 0f,
+                    _cts?.Token ?? CancellationToken.None
+                );
+
+                OnLogReceived?.Invoke($"[명령] 목표 속도를 {targetSpeed}m/s로 변경했습니다.");
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] 속도 변경 명령 실패: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 비행 중 실시간으로 목표 고도를 변경합니다. (제자리 고도 상승/하강)
+        /// </summary>
+        public async Task ChangeTargetAltitude(float targetAltitude)
+        {
+            // 안전장치 확인
+            if (_drone == null || !CurrentState.IsConnected) return;
+
+            try
+            {
+                await GoTo(CurrentState.Latitude, CurrentState.Longitude, targetAltitude);
+
+                // (GoTo 내부에 이미 로그가 출력되므로, 여기서는 별도의 로그를 찍지 않아도 깔끔합니다)
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] 고도 변경 명령 실패: {ex.Message}");
+            }
+        }
         #endregion
 
 
@@ -713,7 +764,7 @@ namespace GCS_Project.xServices
                         // 핵심 로직: 새로운 지점으로 목적지가 바뀌었을 때만 GoTo 명령 전송 (중복 전송 방지)
                         if (currentDestination != nextPoint)
                         {
-                            await GoTo(nextPoint.Lat, nextPoint.Lng);
+                            await GoTo(nextPoint.Lat, nextPoint.Lng, (float)CurrentState.TargetAltitude);
                             currentDestination = nextPoint;
 
                             OnLogReceived?.Invoke($"[미션] 다음 웨이포인트로 이동 중... (위도: {Math.Round(nextPoint.Lat, 5)}, 경도: {Math.Round(nextPoint.Lng, 5)})");
@@ -772,7 +823,7 @@ namespace GCS_Project.xServices
         /// <summary>
         /// 지정된 위도, 경도, 고도로 기체를 즉시 이동시킵니다.
         /// </summary>
-        public async Task GoTo(double lat, double lng, float alt = 5.0f)
+        public async Task GoTo(double lat, double lng, float alt)
         {
             // 1. 안전장치: 드론 객체와 통신 상태 확인
             if (_drone == null || !CurrentState.IsConnected)

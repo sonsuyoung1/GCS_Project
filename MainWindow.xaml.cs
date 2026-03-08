@@ -195,14 +195,12 @@ namespace GCS_Project
         private void ManualModeToggle_Checked(object sender, RoutedEventArgs e)
         {
             _viewModel?.ToggleManualControl(true);
-            ManualModeToggle.Background = System.Windows.Media.Brushes.LightGreen;
         }
 
         // 2. 수동 조종 모드 끄기 (버튼 해제)
         private void ManualModeToggle_Unchecked(object sender, RoutedEventArgs e)
         {
             _viewModel?.ToggleManualControl(false);
-            ManualModeToggle.Background = System.Windows.Media.Brushes.LightGray;
         }
 
         // 3. 키보드를 눌렀을 때 (가속 페달 밟기)
