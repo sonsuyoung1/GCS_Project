@@ -74,15 +74,19 @@
 
                     <TextBlock Text="Drone Video" Foreground="#3B82F6" FontWeight="SemiBold" FontSize="14" Margin="5,2"/>
 
-                    <Grid Grid.Row="1">
-                        <vlc:VideoView x:Name="VideoView1" Background="Black"/>
+                    <Grid Grid.Row="1" x:Name="VideoHostGrid">
+                        <vlc:VideoView x:Name="VideoView1"
+                                       Background="Black">
+                            <Grid x:Name="VideoOverlayRoot"
+                                  Background="Transparent">
 
-                        <Canvas x:Name="BboxOverlay"
-                                Background="Transparent"
-                                Panel.ZIndex="10"
-                                IsHitTestVisible="True"
-                                MouseLeftButtonDown="BboxOverlay_MouseLeftButtonDown"
-                                SizeChanged="BboxOverlay_SizeChanged"/>
+                                <Canvas x:Name="BboxOverlay"
+                                        Background="Transparent"
+                                        IsHitTestVisible="True"
+                                        MouseLeftButtonDown="BboxOverlay_MouseLeftButtonDown"
+                                        SizeChanged="BboxOverlay_SizeChanged"/> 
+                            </Grid>
+                        </vlc:VideoView>
                     </Grid>
                 </Grid>
             </Border>

@@ -177,45 +177,26 @@ namespace GCS_Project.ViewModels
             if (_mavStarting) return;
             _mavStarting = true;
 
-            try
-            {
-                // 2. 인자는 깔끔하게 비웁니다! (서비스의 기본값 사용)
-                await _mavlinkService.StartAsync();
-                ChatLog += "\n[시스템] MAVLink 연결 성공";
-                await _yoloMetaUdpService.StartAsync();
-                ChatLog += "\n[시스템] YOLO UDP 메타 수신 시작";
-            }
-            catch (Exception ex)
-            {
-                // 3. 에러 방패 (포트가 이미 사용 중이거나 와이파이가 끊겼을 때 프로그램이 안 뻗음)
-                ChatLog += $"\n[오류] MAVLink 시작 실패: {ex.Message}";
-            }
-            finally
-            {
-                // 4. 문지기 퇴근
-                _mavStarting = false;
-            }
-
-            // 드론의 데이터 업데이트
+            // ===== 1. 이벤트 구독 먼저 =====
             _mavlinkService.OnDataUpdated += (state) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() => HandleDroneData(state));
             };
 
-            // 웨이포인트 개수 변화
             _mavlinkService.OnWaypointCountChanged += (count) =>
             {
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     _currentWaypointCount = count;
                     NotifyCommandStates();
-                    ChatLog += $"\n[시스템] 웨이포인트 개수 동기화 됨: {count}개"; // 확인용 로그
+                    ChatLog += $"\n[시스템] 웨이포인트 개수 동기화 됨: {count}개";
                 });
             };
 
             _mavlinkService.OnMissionCompleted += () =>
             {
-                Application.Current.Dispatcher.BeginInvoke(() => {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
                     FlightMode = MODE_TAKEOFF;
                     ChatLog += "\n모든 목적지에 도착하여 미션을 종료합니다.";
                 });
@@ -245,28 +226,22 @@ namespace GCS_Project.ViewModels
                 });
             };
 
-            // 타겟 업데이트
-            /*_mavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
+            try
             {
-                Application.Current.Dispatcher.BeginInvoke(async () =>
-                {
-                    // 1. 지도에 마커 표시 (기존 유지)
-                    PersonDetectedOnMap?.Invoke(lat, lng);
+                await _mavlinkService.StartAsync();
+                ChatLog += "\n[시스템] MAVLink 연결 성공";
 
-                    if (id == SelectedTarget?.ID)
-                    {
-                        _targetLostTimer.Stop(); // 타이머 리셋
-                        _targetLostTimer.Start();
-                    }
-
-                    // 2. 현재 추적 모드이고, 이 타겟이 내가 선택한 타겟이라면?
-                    if (FlightMode == "TRACKING" && SelectedTarget != null && SelectedTarget.ID == id)
-                    {
-                        // 드론에게 실시간 좌표 전송!
-                        await _mavlinkService.GoTo(lat, lng);
-                    }
-                });
-            };*/
+                await _yoloMetaUdpService.StartAsync();
+                ChatLog += "\n[시스템] YOLO UDP 메타 수신 시작";
+            }
+            catch (Exception ex)
+            {
+                ChatLog += $"\n[오류] 서비스 시작 실패: {ex.Message}";
+            }
+            finally
+            {
+                _mavStarting = false;
+            }
         }
 
         private void HandleDroneData(DroneState state)
@@ -338,8 +313,6 @@ namespace GCS_Project.ViewModels
             {
                 _detectedTargets.Add(target);
             }
-
-            // 현재 선택된 타겟이 새 프레임에도 존재하는지 확인
             if (SelectedTarget != null)
             {
                 DetectedTarget? matched = null;
