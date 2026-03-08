@@ -64,7 +64,7 @@
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-<!-- 03/05 수정(클릭 좌표 레이어 추가)-->
+<!-- 03/08 수정-->
             <Border Grid.Row="1" Background="#0B1220" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="4" Margin="0,0,0,6">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -76,17 +76,7 @@
 
                     <Grid Grid.Row="1" x:Name="VideoHostGrid">
                         <vlc:VideoView x:Name="VideoView1"
-                                       Background="Black">
-                            <Grid x:Name="VideoOverlayRoot"
-                                  Background="Transparent">
-
-                                <Canvas x:Name="BboxOverlay"
-                                        Background="Transparent"
-                                        IsHitTestVisible="True"
-                                        MouseLeftButtonDown="BboxOverlay_MouseLeftButtonDown"
-                                        SizeChanged="BboxOverlay_SizeChanged"/> 
-                            </Grid>
-                        </vlc:VideoView>
+                                       Background="Black"/>
                     </Grid>
                 </Grid>
             </Border>
