@@ -100,13 +100,16 @@ namespace GCS_Project
             };
 
             _overlayWindow.Show();
+
             HookOverlayEvents();
 
+            UpdateOverlayBounds();
+            _overlayWindow.DrawTestBox();
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 UpdateOverlayBounds();
-                RedrawBboxes();
+                _overlayWindow?.DrawTestBox();
             }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 

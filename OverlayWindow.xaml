@@ -4,10 +4,10 @@
         WindowStyle="None"
         ResizeMode="NoResize"
         AllowsTransparency="True"
-        Background="Transparent"
+        Background="#01000000"
         ShowInTaskbar="False"
         Topmost="True"
         Focusable="False">
     <Canvas x:Name="OverlayCanvas"
-            Background="Transparent"/>
+            Background="#01000000"/>
 </Window>
