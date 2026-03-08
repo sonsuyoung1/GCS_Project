@@ -27,6 +27,8 @@ namespace GCS_Project
         private double _scale = 1.0;
         private double _offsetX = 0.0;
         private double _offsetY = 0.0;
+        private bool _overlayDirty = false;
+        private System.Windows.Threading.DispatcherTimer? _overlayTimer;
         #endregion
 
 
@@ -37,6 +39,23 @@ namespace GCS_Project
 
             _viewModel = new MainViewModel();
             this.DataContext = _viewModel;
+
+            _viewModel.DetectedTargets.CollectionChanged += (s, e) =>
+            {
+                _overlayDirty = true;
+            };
+
+            _overlayTimer = new System.Windows.Threading.DispatcherTimer();
+            _overlayTimer.Interval = TimeSpan.FromMilliseconds(100);
+            _overlayTimer.Tick += (s, e) =>
+            {
+                if (_overlayDirty)
+                {
+                    _overlayDirty = false;
+                    RedrawBboxes();
+                }
+            };
+            _overlayTimer.Start();
 
             // ===== [VIDEO INIT] =====
             Core.Initialize();
@@ -55,6 +74,12 @@ namespace GCS_Project
             };
 
             this.Loaded += MainWindow_Loaded;
+
+            this.SizeChanged += (s, e) =>
+            {
+                RecalcOverlayTransform();
+                RedrawBboxes();
+            };
         }
         #endregion
 
@@ -72,6 +97,7 @@ namespace GCS_Project
             PlayRtpStream(_mp1);
 
             RecalcOverlayTransform(); // 03/05 추가
+            RedrawBboxes();
         }
 
         private async Task InitializeMapAsync()
@@ -242,8 +268,8 @@ namespace GCS_Project
         {
             if (mp == null || _libVLC == null) return;
 
-            string sdpPath = @"C:\Users\LAAA\Desktop\stream.sdp";
-
+            string sdpPath = @"C:\Users\82106\OneDrive\바탕 화면\stream.sdp";
+            //string sdpPath = @"C:\Users\LAAA\Desktop\stream.sdp";
             if (!File.Exists(sdpPath))
             {
                 MessageBox.Show($"SDP 파일 없음: {sdpPath}");
@@ -258,13 +284,17 @@ namespace GCS_Project
         {
             try
             {
+                _overlayTimer?.Stop();
+                _overlayTimer = null;
+
                 _viewModel?.Dispose();
 
-                _mp1?.Stop(); 
-                _mp1?.Dispose(); 
+                _mp1?.Stop();
+                _mp1?.Dispose();
                 _libVLC?.Dispose();
             }
             catch { }
+
             base.OnClosed(e);
         }
         //03/05 수정 
@@ -272,6 +302,7 @@ namespace GCS_Project
         private void BboxOverlay_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             RecalcOverlayTransform();
+            RedrawBboxes();
         }
 
         // 영상 위 클릭하면 좌표 확인 (지금 단계 목표)
@@ -309,10 +340,10 @@ namespace GCS_Project
             }
 
             DetectedTarget? hit = null;
+            double bestArea = double.MaxValue;
 
             foreach (var t in targets)
             {
-                // bbox가 center(x,y), size(w,h)라서 left/top/right/bottom으로 바꿔 판정
                 double left = t.Bx - (t.Bw / 2.0);
                 double right = t.Bx + (t.Bw / 2.0);
                 double top = t.By - (t.Bh / 2.0);
@@ -320,8 +351,13 @@ namespace GCS_Project
 
                 if (fx >= left && fx <= right && fy >= top && fy <= bottom)
                 {
-                    hit = t;
-                    break;
+                    double area = t.Bw * t.Bh;
+
+                    if (area < bestArea)
+                    {
+                        bestArea = area;
+                        hit = t;
+                    }
                 }
             }
 
@@ -337,6 +373,7 @@ namespace GCS_Project
             // 선택된 것만 추적 표시
             foreach (var t in targets)
                 t.IsBeingTracked = (t == hit);
+            RedrawBboxes();
 
             MessageBox.Show(
                 $"SELECTED\nID={hit.ID}\nTYPE={hit.TargetType}\n" +
@@ -350,7 +387,13 @@ namespace GCS_Project
             double canvasW = BboxOverlay.ActualWidth;
             double canvasH = BboxOverlay.ActualHeight;
 
-            if (canvasW <= 1 || canvasH <= 1) return;
+            if (canvasW <= 1 || canvasH <= 1)
+            {
+                _scale = 1.0;
+                _offsetX = 0.0;
+                _offsetY = 0.0;
+                return;
+            }
 
             _scale = Math.Min(canvasW / FRAME_WIDTH, canvasH / FRAME_HEIGHT);
 
@@ -374,6 +417,81 @@ namespace GCS_Project
             double fy = (cy - _offsetY) / _scale;
 
             return (fx, fy);
+        }
+
+        private (double cx, double cy) FrameToCanvas(double fx, double fy)
+        {
+            double cx = _offsetX + (fx * _scale);
+            double cy = _offsetY + (fy * _scale);
+            return (cx, cy);
+        }
+
+        private void RedrawBboxes()
+        {
+            if (_viewModel == null) return;
+
+            BboxOverlay.Children.Clear();
+            RecalcOverlayTransform();
+
+            if (BboxOverlay.ActualWidth <= 1 || BboxOverlay.ActualHeight <= 1)
+                return;
+
+            foreach (var t in _viewModel.DetectedTargets)
+            {
+                // 프레임 기준 bbox -> left/top/right/bottom
+                double leftF = t.Bx - (t.Bw / 2.0);
+                double topF = t.By - (t.Bh / 2.0);
+                double rightF = t.Bx + (t.Bw / 2.0);
+                double bottomF = t.By + (t.Bh / 2.0);
+
+                // 프레임 범위 밖 값 방어
+                leftF = Math.Max(0, leftF);
+                topF = Math.Max(0, topF);
+                rightF = Math.Min(FRAME_WIDTH, rightF);
+                bottomF = Math.Min(FRAME_HEIGHT, bottomF);
+
+                if (rightF <= leftF || bottomF <= topF)
+                    continue;
+
+                // 프레임 좌표 -> 캔버스 좌표
+                var p1 = FrameToCanvas(leftF, topF);
+                var p2 = FrameToCanvas(rightF, bottomF);
+
+                double rectLeft = p1.cx;
+                double rectTop = p1.cy;
+                double rectWidth = p2.cx - p1.cx;
+                double rectHeight = p2.cy - p1.cy;
+
+                if (rectWidth <= 1 || rectHeight <= 1)
+                    continue;
+
+                var rect = new System.Windows.Shapes.Rectangle
+                {
+                    Width = rectWidth,
+                    Height = rectHeight,
+                    StrokeThickness = t.IsBeingTracked ? 3 : 2,
+                    Stroke = t.IsBeingTracked
+                        ? System.Windows.Media.Brushes.Lime
+                        : System.Windows.Media.Brushes.Red,
+                    Fill = System.Windows.Media.Brushes.Transparent
+                };
+
+                Canvas.SetLeft(rect, rectLeft);
+                Canvas.SetTop(rect, rectTop);
+                BboxOverlay.Children.Add(rect);
+
+                var label = new TextBlock
+                {
+                    Text = $"ID:{t.ID} {t.TargetType}",
+                    Foreground = System.Windows.Media.Brushes.Yellow,
+                    FontSize = 12,
+                    Background = System.Windows.Media.Brushes.Black
+                };
+
+                Canvas.SetLeft(label, rectLeft);
+                Canvas.SetTop(label, Math.Max(0, rectTop - 20));
+                BboxOverlay.Children.Add(label);
+            }
         }
         #endregion
     }
