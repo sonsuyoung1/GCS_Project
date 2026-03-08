@@ -10,6 +10,7 @@ using LibVLCSharp.Shared;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Controls;
+using System.ComponentModel;
 
 namespace GCS_Project
 {
@@ -20,13 +21,12 @@ namespace GCS_Project
         private MainViewModel? _viewModel;
         private LibVLC? _libVLC;
         private LibVLCSharp.Shared.MediaPlayer? _mp1;
+        private OverlayWindow? _overlayWindow;
+
         // ===== Video Frame Size (YOLO 입력 해상도) =====
         private const double FRAME_WIDTH = 1920.0;
         private const double FRAME_HEIGHT = 1080.0;
-        // 캔버스(화면) <-> 프레임(1920x1080) 변환용
-        private double _scale = 1.0;
-        private double _offsetX = 0.0;
-        private double _offsetY = 0.0;
+
         private bool _overlayDirty = false;
         private System.Windows.Threading.DispatcherTimer? _overlayTimer;
         #endregion
@@ -47,13 +47,11 @@ namespace GCS_Project
 
             _overlayTimer = new System.Windows.Threading.DispatcherTimer();
             _overlayTimer.Interval = TimeSpan.FromMilliseconds(100);
+            //나중에 최적화
             _overlayTimer.Tick += (s, e) =>
             {
-                if (_overlayDirty)
-                {
-                    _overlayDirty = false;
-                    RedrawBboxes();
-                }
+                RedrawBboxes();
+                _overlayDirty = false;
             };
             _overlayTimer.Start();
 
@@ -75,11 +73,10 @@ namespace GCS_Project
 
             this.Loaded += MainWindow_Loaded;
 
-            this.SizeChanged += (s, e) =>
-            {
-                RecalcOverlayTransform();
-                RedrawBboxes();
-            };
+            this.LocationChanged += MainWindow_WindowChanged;
+            this.SizeChanged += MainWindow_WindowChanged;
+            this.StateChanged += MainWindow_WindowChanged;
+            this.Closing += MainWindow_Closing;
         }
         #endregion
 
@@ -92,12 +89,25 @@ namespace GCS_Project
                 MessageBox.Show("ViewModel(DataContext) 연결이 안 됨");
                 return;
             }
+
             await InitializeMapAsync();
 
             PlayRtpStream(_mp1);
 
-            RecalcOverlayTransform(); // 03/05 추가
-            RedrawBboxes();
+            _overlayWindow = new OverlayWindow
+            {
+                Owner = this
+            };
+
+            _overlayWindow.Show();
+            HookOverlayEvents();
+
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                UpdateOverlayBounds();
+                RedrawBboxes();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         private async Task InitializeMapAsync()
@@ -153,6 +163,52 @@ namespace GCS_Project
             {
                 MessageBox.Show($"지도 초기화 실패: {ex.Message}", "오류", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+        // 아래부터 03/08 추가함
+        private void MainWindow_WindowChanged(object? sender, EventArgs e)
+        {
+            UpdateOverlayBounds();
+            RedrawBboxes();
+        }
+
+        private void MainWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            if (_overlayWindow != null)
+            {
+                _overlayWindow.Close();
+                _overlayWindow = null;
+            }
+        }
+
+        private void UpdateOverlayBounds()
+        {
+            if (_overlayWindow == null) return;
+            if (!IsLoaded) return;
+
+            if (WindowState == WindowState.Minimized)
+            {
+                _overlayWindow.Hide();
+                return;
+            }
+
+            if (!_overlayWindow.IsVisible)
+                _overlayWindow.Show();
+
+            if (VideoView1.ActualWidth <= 1 || VideoView1.ActualHeight <= 1) return;
+
+            var topLeft = VideoView1.PointToScreen(new Point(0, 0));
+
+            _overlayWindow.Left = topLeft.X;
+            _overlayWindow.Top = topLeft.Y;
+            _overlayWindow.Width = VideoView1.ActualWidth;
+            _overlayWindow.Height = VideoView1.ActualHeight;
+        }
+        private void HookOverlayEvents()
+        {
+            if (_overlayWindow == null) return;
+
+            _overlayWindow.OverlayCanvasControl.SizeChanged += OverlayCanvas_SizeChanged;
+            _overlayWindow.OverlayCanvasControl.MouseLeftButtonDown += OverlayCanvas_MouseLeftButtonDown;
         }
         #endregion
 
@@ -287,6 +343,9 @@ namespace GCS_Project
                 _overlayTimer?.Stop();
                 _overlayTimer = null;
 
+                _overlayWindow?.Close();
+                _overlayWindow = null;
+
                 _viewModel?.Dispose();
 
                 _mp1?.Stop();
@@ -297,23 +356,22 @@ namespace GCS_Project
 
             base.OnClosed(e);
         }
-        //03/05 수정 
-        // Canvas 크기 바뀔 때(창모드/전체화면/비율 변경 포함) 변환값 재계산
-        private void BboxOverlay_SizeChanged(object sender, SizeChangedEventArgs e)
+        //03/08 수정 
+        private void OverlayCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            RecalcOverlayTransform();
             RedrawBboxes();
         }
 
         // 영상 위 클릭하면 좌표 확인 (지금 단계 목표)
-        private void BboxOverlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        private void OverlayCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            var p = e.GetPosition(BboxOverlay);
+            if (_overlayWindow == null || _viewModel == null)
+                return;
 
-            // 변환값 최신화(처음 클릭 시 ActualWidth/Height 반영 안 되는 경우 방지)
-            RecalcOverlayTransform();
+            var canvas = _overlayWindow.OverlayCanvasControl;
+            var p = e.GetPosition(canvas);
 
-            var framePt = CanvasToFrame(p.X, p.Y);
+            var framePt = CanvasToFrame(p.X, p.Y, canvas.ActualWidth, canvas.ActualHeight);
 
             if (framePt == null)
             {
@@ -323,14 +381,6 @@ namespace GCS_Project
 
             var (fx, fy) = framePt.Value;
 
-            // ===== [여기부터 4단계: hit-test로 객체 선택] =====
-            if (_viewModel == null)
-            {
-                MessageBox.Show("ViewModel 없음");
-                return;
-            }
-
-            // MainViewModel이 관리하는 공식 타겟 목록 사용
             var targets = _viewModel.DetectedTargets;
 
             if (targets.Count == 0)
@@ -367,12 +417,11 @@ namespace GCS_Project
                 return;
             }
 
-            // 선택 타겟 지정 (DataGrid 선택 연동)
             _viewModel.SelectedTarget = hit;
 
-            // 선택된 것만 추적 표시
             foreach (var t in targets)
                 t.IsBeingTracked = (t == hit);
+
             RedrawBboxes();
 
             MessageBox.Show(
@@ -382,69 +431,66 @@ namespace GCS_Project
             );
         }
 
-        private void RecalcOverlayTransform()
+        private (double fx, double fy)? CanvasToFrame(double cx, double cy, double canvasW, double canvasH)
         {
-            double canvasW = BboxOverlay.ActualWidth;
-            double canvasH = BboxOverlay.ActualHeight;
-
             if (canvasW <= 1 || canvasH <= 1)
-            {
-                _scale = 1.0;
-                _offsetX = 0.0;
-                _offsetY = 0.0;
-                return;
-            }
-
-            _scale = Math.Min(canvasW / FRAME_WIDTH, canvasH / FRAME_HEIGHT);
-
-            double viewW = FRAME_WIDTH * _scale;
-            double viewH = FRAME_HEIGHT * _scale;
-
-            _offsetX = (canvasW - viewW) / 2.0;
-            _offsetY = (canvasH - viewH) / 2.0;
-        }
-
-        private (double fx, double fy)? CanvasToFrame(double cx, double cy)
-        {
-            double viewW = FRAME_WIDTH * _scale;
-            double viewH = FRAME_HEIGHT * _scale;
-
-            if (cx < _offsetX || cx > _offsetX + viewW ||
-                cy < _offsetY || cy > _offsetY + viewH)
                 return null;
 
-            double fx = (cx - _offsetX) / _scale;
-            double fy = (cy - _offsetY) / _scale;
+            double scale = Math.Min(canvasW / FRAME_WIDTH, canvasH / FRAME_HEIGHT);
+
+            double viewW = FRAME_WIDTH * scale;
+            double viewH = FRAME_HEIGHT * scale;
+
+            double offsetX = (canvasW - viewW) / 2.0;
+            double offsetY = (canvasH - viewH) / 2.0;
+
+            if (cx < offsetX || cx > offsetX + viewW ||
+                cy < offsetY || cy > offsetY + viewH)
+                return null;
+
+            double fx = (cx - offsetX) / scale;
+            double fy = (cy - offsetY) / scale;
 
             return (fx, fy);
         }
 
-        private (double cx, double cy) FrameToCanvas(double fx, double fy)
+        private (double cx, double cy) FrameToCanvas(double fx, double fy, double canvasW, double canvasH)
         {
-            double cx = _offsetX + (fx * _scale);
-            double cy = _offsetY + (fy * _scale);
+            double scale = Math.Min(canvasW / FRAME_WIDTH, canvasH / FRAME_HEIGHT);
+
+            double viewW = FRAME_WIDTH * scale;
+            double viewH = FRAME_HEIGHT * scale;
+
+            double offsetX = (canvasW - viewW) / 2.0;
+            double offsetY = (canvasH - viewH) / 2.0;
+
+            double cx = offsetX + (fx * scale);
+            double cy = offsetY + (fy * scale);
+
             return (cx, cy);
         }
 
         private void RedrawBboxes()
         {
-            if (_viewModel == null) return;
+            if (_viewModel == null || _overlayWindow == null)
+                return;
 
-            BboxOverlay.Children.Clear();
-            RecalcOverlayTransform();
+            var canvas = _overlayWindow.OverlayCanvasControl;
+            canvas.Children.Clear();
 
-            if (BboxOverlay.ActualWidth <= 1 || BboxOverlay.ActualHeight <= 1)
+            double canvasW = canvas.ActualWidth;
+            double canvasH = canvas.ActualHeight;
+
+            if (canvasW <= 1 || canvasH <= 1)
                 return;
 
             foreach (var t in _viewModel.DetectedTargets)
             {
-                // 프레임 기준 bbox -> left/top/right/bottom
                 double leftF = t.Bx - (t.Bw / 2.0);
                 double topF = t.By - (t.Bh / 2.0);
                 double rightF = t.Bx + (t.Bw / 2.0);
                 double bottomF = t.By + (t.Bh / 2.0);
 
-                // 프레임 범위 밖 값 방어
                 leftF = Math.Max(0, leftF);
                 topF = Math.Max(0, topF);
                 rightF = Math.Min(FRAME_WIDTH, rightF);
@@ -453,9 +499,8 @@ namespace GCS_Project
                 if (rightF <= leftF || bottomF <= topF)
                     continue;
 
-                // 프레임 좌표 -> 캔버스 좌표
-                var p1 = FrameToCanvas(leftF, topF);
-                var p2 = FrameToCanvas(rightF, bottomF);
+                var p1 = FrameToCanvas(leftF, topF, canvasW, canvasH);
+                var p2 = FrameToCanvas(rightF, bottomF, canvasW, canvasH);
 
                 double rectLeft = p1.cx;
                 double rectTop = p1.cy;
@@ -478,7 +523,7 @@ namespace GCS_Project
 
                 Canvas.SetLeft(rect, rectLeft);
                 Canvas.SetTop(rect, rectTop);
-                BboxOverlay.Children.Add(rect);
+                canvas.Children.Add(rect);
 
                 var label = new TextBlock
                 {
@@ -490,7 +535,7 @@ namespace GCS_Project
 
                 Canvas.SetLeft(label, rectLeft);
                 Canvas.SetTop(label, Math.Max(0, rectTop - 20));
-                BboxOverlay.Children.Add(label);
+                canvas.Children.Add(label);
             }
         }
         #endregion
