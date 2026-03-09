@@ -26,7 +26,10 @@ namespace GCS_Project.Services
 
         // 드론의 위도와 경도를 받아 지도의 마커 위치를 갱신.
         // 드론 위치 업데이트
+<<<<<<< HEAD
         // 03/02 heading 수정
+=======
+>>>>>>> suyoung
         public async Task UpdateDroneLocation(double lat, double lng, double heading)
         {
             if (_webView?.CoreWebView2 != null)
@@ -44,19 +47,22 @@ namespace GCS_Project.Services
         public async Task UndoLastWaypointOnMap()
         {
             if (_webView?.CoreWebView2 != null)
-            {
                 await _webView.ExecuteScriptAsync("undoLastWaypoint()");
-            }
         }
 
         // 지도상의 모든 미션 경로 및 마커 초기화
         public async Task ClearAllWaypointsOnMap()
         {
             if (_webView?.CoreWebView2 != null)
-            {
                 await _webView.ExecuteScriptAsync("clearAllWaypoints()");
-            }
         }
+
+        public async Task ClearAllOnMap()
+        {
+            if (_webView?.CoreWebView2 != null) 
+                await _webView.ExecuteScriptAsync("clearAllMapElements()");
+        }
+
 
         public async Task UpdateTargetOnMap(int id, double lat, double lng, string type, bool isTracked)
         {

@@ -1,4 +1,5 @@
 ﻿using Asv.Mavlink;
+using Asv.Mavlink.Minimal;
 using GCS_Project.Models;
 using GCS_Project.xServices;
 using System;
@@ -111,13 +112,23 @@ namespace GCS_Project.ViewModels
         public ICommand ClearWaypointsCommand { get; }
         public ICommand FollowCommand { get; }
         // public ICommand StopTrackingCommand { get; }
+        // 고도, 속도 조절 명령
+        public ICommand IncreaseAltitudeCommand { get; }
+        public ICommand DecreaseAltitudeCommand { get; }
+        public ICommand IncreaseSpeedCommand { get; }
+        public ICommand DecreaseSpeedCommand { get; }
         #endregion
 
 
         #region [4. 이벤트 (View 통신용)]
         public event Action? UndoWaypointRequested;
         public event Action? ClearWaypointsRequested;
+<<<<<<< HEAD
         public event Action<double, double, double>? PositionUpdated; // 03/02
+=======
+        public event Action? AllClearRequested;
+        public event Action<double, double, double>? PositionUpdated;
+>>>>>>> suyoung
         public event Action<double, double>? TakeoffPointSet;
         public event Action<double, double>? PersonDetectedOnMap;
         #endregion
@@ -140,6 +151,56 @@ namespace GCS_Project.ViewModels
             FollowCommand = new RelayCommand(ExecuteFollow, () => IsFollowEnabled);
             StopMissionCommand = new RelayCommand(ExecuteStopMission, () => IsStopEnabled);
             // StopTrackingCommand = new RelayCommand(ExecuteStopTracking, () => IsStopEnabled);
+            IncreaseAltitudeCommand = new RelayCommand(async () =>
+            {
+                if (Drone.TargetAltitude < 100)
+                {
+                    Drone.TargetAltitude += 1.0;
+
+                    // 안전장치: 시동이 걸려있고 && TAKEOFF 모드일 때만 명령 전송!
+                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    {
+                        await _mavlinkService.ChangeTargetAltitude((float)Drone.TargetAltitude);
+                    }
+                }
+            });
+            DecreaseAltitudeCommand = new RelayCommand(async () =>
+            {
+                if (Drone.TargetAltitude > 1)
+                {
+                    Drone.TargetAltitude -= 1.0;
+
+                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    {
+                        await _mavlinkService.ChangeTargetAltitude((float)Drone.TargetAltitude);
+                    }
+                }
+            });
+            IncreaseSpeedCommand = new RelayCommand(async () =>
+            {
+                if (Drone.TargetSpeed < 20)
+                {
+                    Drone.TargetSpeed += 1.0;
+
+                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    {
+                        await _mavlinkService.ChangeTargetSpeed((float)Drone.TargetSpeed);
+                    }
+                }
+            });
+
+            DecreaseSpeedCommand = new RelayCommand(async () =>
+            {
+                if (Drone.TargetSpeed > 1)
+                {
+                    Drone.TargetSpeed -= 1.0;
+
+                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    {
+                        await _mavlinkService.ChangeTargetSpeed((float)Drone.TargetSpeed);
+                    }
+                }
+            });
 
 
             _targetLostTimer = new System.Timers.Timer(3000); // 3초 동안 데이터 없으면 소실 판단
@@ -259,7 +320,11 @@ namespace GCS_Project.ViewModels
                 _lastMapUpdate = DateTime.UtcNow;
 
                 // 1. 드론 현재 위치 업데이트
+<<<<<<< HEAD
                 PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Heading); //03/02
+=======
+                PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
+>>>>>>> suyoung
 
                 // 2. 이륙 마커 업데이트 (스위치를 확인해서 '딱 한 번만' 그립니다!)
                 if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue && !_isTakeoffMarkerDrawn)
@@ -271,7 +336,7 @@ namespace GCS_Project.ViewModels
 
             // 3. HUD 계산
             PitchOffset = state.Pitch * 3.55;
-            HeadingOffset = -state.Heading;
+            HeadingOffset = -state.Yaw;
 
             // 4. 배터리 경고
             if (state.BatteryPercent > 0 && state.BatteryPercent <= 20 && !ChatLog.Contains("배터리 부족"))
@@ -409,9 +474,9 @@ namespace GCS_Project.ViewModels
         {
             try
             {
-                await _mavlinkService.Takeoff(5.0f);
+                await _mavlinkService.Takeoff((float)Drone.TargetAltitude);
                 FlightMode = MODE_TAKEOFF;
-                ChatLog += "\n[명령] 이륙 명령 전송 (목표 고도: 5m)";
+                ChatLog += $"\n[명령] 이륙 명령 전송 (목표 고도: {Drone.TargetAltitude}m)";
 
                 if (Drone.Latitude != 0 && Drone.Longitude != 0)
                 {
@@ -433,7 +498,7 @@ namespace GCS_Project.ViewModels
                 FlightMode = MODE_IDLE;
 
                 await Task.Run(() => _mavlinkService.ClearWaypoints());
-                ClearWaypointsRequested?.Invoke();
+                AllClearRequested?.Invoke();
 
                 ChatLog += "\n[명령] 착륙 명령 전송 및 목적지 초기화";
             }
@@ -452,7 +517,7 @@ namespace GCS_Project.ViewModels
                 ChatLog += "\n[명령] 복귀(RTL) 명령 전송.";
 
                 await Task.Run(() => _mavlinkService.ClearWaypoints());
-                ClearWaypointsRequested?.Invoke();
+                AllClearRequested?.Invoke();
             }
             catch (Exception ex)
             {
@@ -511,7 +576,7 @@ namespace GCS_Project.ViewModels
                 if (SelectedTarget == null) return;
 
                 await Task.Run(() => _mavlinkService.StopMission());
-                await _mavlinkService.GoTo(SelectedTarget.Lat, SelectedTarget.Lng);
+                await _mavlinkService.GoTo(SelectedTarget.Lat, SelectedTarget.Lng, (float)Drone.TargetAltitude);
 
                 FlightMode = MODE_TRACKING;
                 ChatLog += $"\n[시스템] 타겟 추적 모드: ID {SelectedTarget.ID}";
@@ -522,8 +587,8 @@ namespace GCS_Project.ViewModels
             }
         }
 
-        // 10. 객체 추적 중단
-        /*private async void ExecuteStopTracking()
+        /*// 10. 객체 추적 중단
+        private async void ExecuteStopTracking()
         {
             try
             {
@@ -538,7 +603,38 @@ namespace GCS_Project.ViewModels
                 ChatLog += $"\n[오류] 추적 중단 실패: {ex.Message}";
             }
         }*/
+
+
+        // 11. 수동 조종 엔진 켜기/끄기
+        public async void ToggleManualControl(bool turnOn)
+        {
+            if (turnOn)
+            {
+                // 1. 드론을 수동/포지션 모드(3)로 변경
+                await _mavlinkService.SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 3);
+                // 2. 가상 조이스틱 엔진 가동
+                _mavlinkService.StartManualControl();
+                // 3. UI 글자 업데이트
+                FlightMode = "MANUAL";
+            }
+            else
+            {
+                // 1. 가상 조이스틱 엔진부터 확실하게 정지
+                _mavlinkService.StopManualControl();
+                // 2. 드론을 다시 컴퓨터가 조종하는 AUTO 모드(4)로 복귀!
+                await _mavlinkService.SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 4);
+                // 3. UI 글자 업데이트
+                FlightMode = "TAKEOFF";
+            }
+        }
+
+        // 12. 키보드 눌림/뗌에 따라 조이스틱 값 전달
+        public void UpdateJoystick(short pitch, short roll, short thrust, short yaw)
+        {
+            _mavlinkService.SetJoystick(pitch, roll, thrust, yaw);
+        }
         #endregion
+
 
         private void NotifyCommandStates()
         {

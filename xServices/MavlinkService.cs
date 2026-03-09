@@ -6,6 +6,7 @@ using Asv.Mavlink.Minimal;
 using GCS_Project.Models;
 using ObservableCollections;
 using R3;
+using System.Windows;
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
@@ -27,11 +28,12 @@ namespace GCS_Project.xServices
         private readonly CompositeDisposable _subs = new(); // 메모리 누수 방지하기 위해 구독 해지 쓰레기통
         private const string GcsRouterId = "GCS_ROUTER";
         private const int GcsSystemId = 255;
-        private const int GcsComponentId = 255;
+        private const int GcsComponentId = 190;
         private bool _telemetryHooked;
         private bool _linkDownReported;
         private DateTime _lastHeartbeatUtc = DateTime.MinValue;
         private Task? _linkWatchdogTask;
+
 
         // v4 core
         private IProtocolFactory? _protocol;
@@ -58,7 +60,7 @@ namespace GCS_Project.xServices
         /// <summary>
         /// MAVLink 프로토콜과 UDP 라우터를 초기화하여 기체를 탐색하고, 연결이 완료되면 데이터 스트림을 활성화합니다.
         /// </summary>
-        public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14550, string droneIp = "192.168.0.46") // ip는 와이파이 달라질 때마다 바꿔면 됨
+        public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14550, string droneIp = "192.168.1.136") // ip는 와이파이 달라질 때마다 바꿔면 됨
         {
             if (_router != null) return;
 
@@ -132,7 +134,7 @@ namespace GCS_Project.xServices
                 if (st == ClientDeviceState.Complete) ready.TrySetResult();
             }));
             await ready.Task;
-
+            
 
             // 6) 데이터 스트림 연결
             HookTelemetry(_drone);
@@ -147,7 +149,6 @@ namespace GCS_Project.xServices
         /// <summary>
         /// 활성화된 모든 MAVLink 통신 연결과 비동기 작업을 안전하게 종료하고, 메모리 누수 방지를 위해 리소스를 해제합니다.
         /// </summary>
-        /// <returns></returns>
         public async Task StopAsync()
         {
             _isMissionRunning = false;
@@ -178,7 +179,6 @@ namespace GCS_Project.xServices
         /// <summary>
         /// 드론의 실시간 센서 데이터(하트비트, GPS, 배터리, 기체 자세 등) 스트림을 구독하여 GCS 상태를 갱신합니다.
         /// </summary>
-        /// <param name="drone"></param>
         private void HookTelemetry(IClientDevice drone)
         {
             if (_telemetryHooked) return;
@@ -202,7 +202,7 @@ namespace GCS_Project.xServices
                     })
                     .AddTo(_subs);
 
-            // 1) 하트비트 감시
+            // 1-1) 하트비트 감시
             var hb = drone.GetMicroservice<IHeartbeatClient>();
             if (hb == null)
             {
@@ -228,6 +228,39 @@ namespace GCS_Project.xServices
                 OnLogReceived?.Invoke("[MAV] 하트비트 감시 시작");
             }
 
+            // 1-2) GCS 심장 박동(Heartbeat) 송신 타이머 (1초 간격)
+            Observable.Timer(TimeSpan.Zero, TimeSpan.FromSeconds(1))
+                .Subscribe(async _ =>
+                {
+                    try
+                    {
+                        if (_router == null) return;
+
+                        // 관제탑(GCS) 전용 심장 박동 패킷 생성
+                        var gcsHeartbeat = new HeartbeatPacket
+                        {
+                            SystemId = (byte)GcsSystemId,
+                            ComponentId = (byte)GcsComponentId,
+                        };
+
+                        // 우리는 드론이 아니라 '관제탑'임을 명시
+                        gcsHeartbeat.Payload.Type = MavType.MavTypeGcs;
+                        gcsHeartbeat.Payload.Autopilot = MavAutopilot.MavAutopilotInvalid; // GCS는 오토파일럿이 아님
+                        gcsHeartbeat.Payload.SystemStatus = MavState.MavStateActive;
+
+                        // 공유기(Router)를 통해 드론에게 심장 박동 쏘기!
+                        await _router.Send(gcsHeartbeat, _cts?.Token ?? CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        // 프로그램 종료 시점 등에서 발생하는 타이머 에러는 조용히 무시
+                        System.Diagnostics.Debug.WriteLine($"[Heartbeat 전송 에러] {ex.Message}");
+                    }
+                })
+                .AddTo(_subs); // 기존처럼 _subs에 넣어서 깔끔하게 생명주기 관리!
+            OnLogReceived?.Invoke("[MAV] GCS 심장 박동 송신 시작 (1Hz)");
+
+
             // 2) 위치 정보 (GPS)
             drone.GetMicroservice<IPositionClient>()?.GlobalPosition
                 .Subscribe(gp => {
@@ -237,12 +270,14 @@ namespace GCS_Project.xServices
                     OnDataUpdated?.Invoke(CurrentState);
                 }).AddTo(_subs);
 
+
             // 3) HUD 정보 (속도)
             drone.GetMicroservice<IPositionClient>()?.VfrHud
                 .Subscribe(vfr => {
                     CurrentState.Speed = Math.Round(vfr.Groundspeed, 2);
                     OnDataUpdated?.Invoke(CurrentState);
                 }).AddTo(_subs);
+
 
             // 4) 배터리 정보
             drone.GetMicroservice<ITelemetryClient>()?.Battery
@@ -251,14 +286,14 @@ namespace GCS_Project.xServices
                     OnDataUpdated?.Invoke(CurrentState);
                 }).AddTo(_subs);
 
+
             // 5) 기체 자세 (Roll, Pitch, Yaw)
             _router!.OnRxMessage
                     .OfType<IProtocolMessage, AttitudePacket>()
                     .Subscribe(packet => {
                         CurrentState.Roll = packet.Payload.Roll * (180.0 / Math.PI);
                         CurrentState.Pitch = packet.Payload.Pitch * (180.0 / Math.PI);
-                        CurrentState.Heading = (packet.Payload.Yaw * (180.0 / Math.PI) + 360) % 360;
-
+                        CurrentState.Yaw = (packet.Payload.Yaw * (180.0 / Math.PI) + 360) % 360;
                         OnDataUpdated?.Invoke(CurrentState);
                     })
                     .AddTo(_subs);
@@ -313,7 +348,7 @@ namespace GCS_Project.xServices
         }
 
         /// <summary>
-        /// 백그라운드에서 기체의 심장 박동(Heartbeat)을 지속적으로 감시하여, 지정된 시간(3초) 응답이 없으면 통신 단절로 처리합니다.
+        /// 백그라운드에서 기체의 심장 박동(Heartbeat)을 지속적으로 감시하여 지정된 시간(3초) 응답이 없으면 통신 단절로 처리합니다.
         /// </summary>
         private void StartLinkWatchdog()
         {
@@ -403,7 +438,7 @@ namespace GCS_Project.xServices
         /// <summary>
         /// 지정된 고도로 이륙 명령(Takeoff)을 전송합니다.
         /// </summary>
-        public async Task Takeoff(float altitude)
+        public async Task Takeoff(float alt)
         {
             // 1. 안전장치: 드론 객체와 통신 상태(IsConnected) 꼼꼼하게 확인
             if (_drone == null || !CurrentState.IsConnected)
@@ -418,7 +453,7 @@ namespace GCS_Project.xServices
             // 2. 명령 전송 및 에러 방어막
             try
             {
-                OnLogReceived?.Invoke($"[명령] 이륙 시도 (목표 고도: {altitude}m)...");
+                OnLogReceived?.Invoke($"[명령] 이륙 시도 (목표 고도: {alt}m)...");
 
                 await SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 4);
 
@@ -430,7 +465,7 @@ namespace GCS_Project.xServices
                 await cmd.SendCommandLong(
                     MavCmd.MavCmdNavTakeoff,
                     float.NaN, float.NaN, float.NaN, float.NaN, float.NaN, float.NaN,
-                    altitude,
+                    alt,
                     _cts?.Token ?? CancellationToken.None
                 );
 
@@ -573,6 +608,57 @@ namespace GCS_Project.xServices
                 OnLogReceived?.Invoke($"[오류] 시동 끄기(Disarm) 명령 전송 실패: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// 비행 중 실시간으로 기체의 목표 이동 속도를 변경합니다.
+        /// </summary>
+        public async Task ChangeTargetSpeed(float targetSpeed)
+        {
+            // 안전장치 확인
+            if (_drone == null || !CurrentState.IsConnected) return;
+
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null) return;
+
+            try
+            {
+                // MavCmdDoChangeSpeed 전송
+                // Param1: 1 (Ground Speed, 멀티로터용)
+                // Param2: 목표 속도 (m/s)
+                // Param3: Throttle (-1은 변경 안 함 유지)
+                await cmd.SendCommandLong(
+                    MavCmd.MavCmdDoChangeSpeed,
+                    1f, targetSpeed, -1f, 0f, 0f, 0f, 0f,
+                    _cts?.Token ?? CancellationToken.None
+                );
+
+                OnLogReceived?.Invoke($"[명령] 목표 속도를 {targetSpeed}m/s로 변경했습니다.");
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] 속도 변경 명령 실패: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 비행 중 실시간으로 목표 고도를 변경합니다. (제자리 고도 상승/하강)
+        /// </summary>
+        public async Task ChangeTargetAltitude(float targetAltitude)
+        {
+            // 안전장치 확인
+            if (_drone == null || !CurrentState.IsConnected) return;
+
+            try
+            {
+                await GoTo(CurrentState.Latitude, CurrentState.Longitude, targetAltitude);
+
+                // (GoTo 내부에 이미 로그가 출력되므로, 여기서는 별도의 로그를 찍지 않아도 깔끔합니다)
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] 고도 변경 명령 실패: {ex.Message}");
+            }
+        }
         #endregion
 
 
@@ -615,7 +701,7 @@ namespace GCS_Project.xServices
                         // 핵심 로직: 새로운 지점으로 목적지가 바뀌었을 때만 GoTo 명령 전송 (중복 전송 방지)
                         if (currentDestination != nextPoint)
                         {
-                            await GoTo(nextPoint.Lat, nextPoint.Lng);
+                            await GoTo(nextPoint.Lat, nextPoint.Lng, (float)CurrentState.TargetAltitude);
                             currentDestination = nextPoint;
 
                             OnLogReceived?.Invoke($"[미션] 다음 웨이포인트로 이동 중... (위도: {Math.Round(nextPoint.Lat, 5)}, 경도: {Math.Round(nextPoint.Lng, 5)})");
@@ -674,7 +760,7 @@ namespace GCS_Project.xServices
         /// <summary>
         /// 지정된 위도, 경도, 고도로 기체를 즉시 이동시킵니다.
         /// </summary>
-        public async Task GoTo(double lat, double lng, float alt = 5.0f)
+        public async Task GoTo(double lat, double lng, float alt)
         {
             // 1. 안전장치: 드론 객체와 통신 상태 확인
             if (_drone == null || !CurrentState.IsConnected)
@@ -845,6 +931,79 @@ namespace GCS_Project.xServices
 
         #region [8. 자원 해제 (Dispose)]
         public async ValueTask DisposeAsync() => await StopAsync();
+        #endregion
+
+
+        #region [9. 수동 조종 (Virtual Joystick)]
+
+        // 조이스틱의 4가지 축 값 (기본값 세팅)
+        // X, Y, R은 -1000 ~ 1000 / Z(스로틀)는 0 ~ 1000 (500이 제자리 호버링)
+        private short _joyX = 0;   // 앞/뒤 (Pitch)
+        private short _joyY = 0;   // 좌/우 (Roll)
+        private short _joyZ = 500; // 상승/하강 (Thrust)
+        private short _joyR = 0;   // 좌우 회전 (Yaw)
+
+        private bool _isManualControlActive = false;
+        private Task? _manualControlTask;
+
+        /// <summary>
+        /// 키보드나 패드에서 입력받은 조이스틱 값을 업데이트합니다.
+        /// </summary>
+        public void SetJoystick(short pitch, short roll, short thrust, short yaw)
+        {
+            _joyX = pitch;
+            _joyY = roll;
+            _joyZ = thrust;
+            _joyR = yaw;
+        }
+
+        /// <summary>
+        /// 1초에 20번씩 드론에게 가상 조이스틱 상태를 전송하는 엔진을 켭니다.
+        /// </summary>
+        public void StartManualControl()
+        {
+            if (_manualControlTask != null && !_manualControlTask.IsCompleted) return;
+
+            _isManualControlActive = true;
+            OnLogReceived?.Invoke("[시스템] 수동 조종(가상 조이스틱) 엔진 가동!");
+
+            _manualControlTask = Task.Run(async () =>
+            {
+                while (_isManualControlActive && _cts != null && !_cts.IsCancellationRequested)
+                {
+                    if (_drone != null && CurrentState.IsConnected && _router != null)
+                    {
+                        try
+                        {
+                            // 수동 조종 패킷 조립
+                            var pkt = new ManualControlPacket();
+                            pkt.Payload.Target = 1; // 보통 1번 드론
+                            pkt.Payload.X = _joyX;
+                            pkt.Payload.Y = _joyY;
+                            pkt.Payload.Z = _joyZ;
+                            pkt.Payload.R = _joyR;
+                            pkt.Payload.Buttons = 0;
+
+                            // 전송! (1초에 20번 쏘기 때문에 로그는 남기지 않습니다)
+                            await _router.Send(pkt, _cts.Token);
+                        }
+                        catch { /* 통신 튐 무시 */ }
+                    }
+                    // 50ms 대기 (1초에 약 20번 전송 = 20Hz)
+                    await Task.Delay(50);
+                }
+            });
+        }
+
+        /// <summary>
+        /// 수동 조종 엔진을 끕니다.
+        /// </summary>
+        public void StopManualControl()
+        {
+            _isManualControlActive = false;
+            _manualControlTask = null;
+            OnLogReceived?.Invoke("[시스템] 수동 조종 엔진 종료.");
+        }
         #endregion
     }
 }
