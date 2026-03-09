@@ -3,7 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
-        Title="GCS Dashboard" Height="850" Width="1600" Background="#1A1A1A">
+        Title="GCS Dashboard" Height="850" Width="1600" Background="#1A1A1A"
+        KeyDown="Window_KeyDown"
+        KeyUp="Window_KeyUp">
     <Window.Resources>
         <Style x:Key="BaseText" TargetType="TextBlock">
             <Setter Property="FontWeight" Value="Bold"/>
@@ -45,6 +47,37 @@
             </Setter>
         </Style>
 
+
+        <Style x:Key="GcsToggleButton" TargetType="ToggleButton">
+            <Setter Property="Height" Value="45"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Background" Value="#E74C3C"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#34495E"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#4A5568"/>
+                                <Setter Property="Foreground" Value="#CBD5E0"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="StatusGroup" TargetType="StackPanel">
             <Setter Property="Orientation" Value="Horizontal"/>
             <Setter Property="Margin" Value="0,0,20,0"/>
@@ -60,12 +93,17 @@
 
         <Grid Grid.Column="0" Margin="10">
             <Grid.RowDefinitions>
+                <RowDefinition Height="300"/>
                 <RowDefinition Height="*"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
+<<<<<<< HEAD
 <!-- 03/08 수정-->
             <Border Grid.Row="1" Background="#0B1220" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="4" Margin="0,0,0,6">
+=======
+
+            <Border Grid.Row="0" Background="#0B1220" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="4" Margin="0,0,0,10">
+>>>>>>> suyoung
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -80,6 +118,53 @@
                     </Grid>
                 </Grid>
             </Border>
+
+            <Border Grid.Row="1" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,10">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Detected Targets" Foreground="#3B82F6" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
+                    <DataGrid Grid.Row="1" 
+                              ItemsSource="{Binding MavlinkService.DetectedTargets}" 
+                              SelectedItem="{Binding SelectedTarget, Mode=TwoWay}" 
+                              AutoGenerateColumns="False" IsReadOnly="True" 
+                              Background="Transparent" Foreground="White" 
+                              RowBackground="Transparent" GridLinesVisibility="None" 
+                              SelectionMode="Single" BorderThickness="0">
+                        <DataGrid.Resources>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="#1E293B"/>
+                                <Setter Property="Foreground" Value="#94A3B8"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                                <Setter Property="Padding" Value="5,8"/>
+                                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                <Setter Property="BorderBrush" Value="#334155"/>
+                            </Style>
+                            <Style TargetType="DataGridRow">
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#3B82F6"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.Resources>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="ID" Binding="{Binding ID}" Width="*"/>
+                            <DataGridTextColumn Header="TYPE" Binding="{Binding TargetType}" Width="*"/>
+                            <DataGridTextColumn Header="LAT" Binding="{Binding Lat, StringFormat={}{0:F5}}" Width="*"/>
+                            <DataGridTextColumn Header="LNG" Binding="{Binding Lng, StringFormat={}{0:F5}}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <UniformGrid Grid.Row="2" Columns="2">
+                <Button Content="Start Track" Command="{Binding FollowCommand}" Background="#3B82F6" Style="{StaticResource GcsButton}"/>
+                <Button Content="Stop Track" Command="{Binding StopTrackingCommand}" Background="#64748B" Style="{StaticResource GcsButton}"/>
+            </UniformGrid>
         </Grid>
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
@@ -91,7 +176,6 @@
             <Border Grid.Row="0" Background="#0F172A" Padding="15,0" BorderBrush="#1E293B" BorderThickness="0,0,0,1">
                 <Grid>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-
                         <StackPanel Style="{StaticResource StatusGroup}">
                             <TextBlock Text="Mode " Foreground="#94A3B8"/>
                             <TextBlock Text="{Binding FlightMode}" Foreground="#22C55E"/>
@@ -140,7 +224,7 @@
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0">
-                        <TextBlock Text="TIME " Foreground="#94A3B8"/>
+                        <TextBlock Text="Time " Foreground="#94A3B8"/>
                         <TextBlock Text="{Binding CurrentDateTime}" Foreground="White" FontWeight="SemiBold"/>
                     </StackPanel>
                 </Grid>
@@ -152,190 +236,68 @@
                     <ColumnDefinition Width="352*"/>
                 </Grid.ColumnDefinitions>
                 <wv2:WebView2 x:Name="mapWebView" Grid.ColumnSpan="2" />
-
-                <Popup x:Name="myPopup"
-                           IsOpen="True" 
-                           AllowsTransparency="True" 
-                           Placement="Bottom" 
-                           PlacementTarget="{Binding ElementName=MapContainer}"
-                           VerticalOffset="-135" 
-                           HorizontalOffset="630" Grid.ColumnSpan="2">
-                    <StackPanel Orientation="Horizontal" IsHitTestVisible="False">
-
-                        <Border Width="100" Height="100" CornerRadius="50" Margin="20"
-                            BorderBrush="White" BorderThickness="1.5" Background="#222">
-                            <Border.Effect>
-                                <DropShadowEffect BlurRadius="10" Opacity="0.5" Direction="225"/>
-                            </Border.Effect>
-                            <Grid>
-                                <Grid.Clip>
-                                    <EllipseGeometry Center="50,50" RadiusX="49" RadiusY="49"/>
-                                </Grid.Clip>
-
-                                <Grid x:Name="HorizonContainer" Height="1000" VerticalAlignment="Center">
-                                    <Grid.RenderTransform>
-                                        <TransformGroup>
-                                            <TranslateTransform Y="{Binding PitchOffset}"/>
-                                            <RotateTransform Angle="{Binding Drone.Roll}" CenterX="50" CenterY="500"/>
-                                        </TransformGroup>
-                                    </Grid.RenderTransform>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="*"/>
-                                        <RowDefinition Height="*"/>
-                                    </Grid.RowDefinitions>
-                                    <Rectangle Grid.Row="0" Fill="#4472C4"/>
-                                    <Rectangle Grid.Row="1" Fill="#638C3C"/>
-                                    <Canvas>
-                                        <Rectangle Canvas.Top="499" Width="100" Height="2" Fill="White" Opacity="0.8"/>
-
-                                        <Line X1="35" Y1="464.5" X2="65" Y2="464.5" Stroke="White" StrokeThickness="1.5"/>
-                                        <TextBlock Text="10" Foreground="White" FontSize="7" Canvas.Top="460" Canvas.Left="68"/>
-                                        <TextBlock Text="10" Foreground="White" FontSize="7" Canvas.Top="460" Canvas.Left="22"/>
-
-                                        <Line X1="40" Y1="429" X2="60" Y2="429" Stroke="White" StrokeThickness="1.2" Opacity="0.8"/>
-                                        <TextBlock Text="20" Foreground="White" FontSize="7" Canvas.Top="424" Canvas.Left="63"/>
-                                        <TextBlock Text="20" Foreground="White" FontSize="7" Canvas.Top="424" Canvas.Left="28"/>
-
-                                        <Line X1="45" Y1="393.5" X2="55" Y2="393.5" Stroke="White" StrokeThickness="1" Opacity="0.6"/>
-                                        <TextBlock Text="30" Foreground="White" FontSize="6" Canvas.Top="389" Canvas.Left="58"/>
-                                        <TextBlock Text="30" Foreground="White" FontSize="6" Canvas.Top="389" Canvas.Left="35"/>
-
-                                        <Line X1="35" Y1="535.5" X2="65" Y2="535.5" Stroke="White" StrokeThickness="1.5"/>
-                                        <TextBlock Text="-10" Foreground="White" FontSize="7" Canvas.Top="531" Canvas.Left="68"/>
-                                        <TextBlock Text="-10" Foreground="White" FontSize="7" Canvas.Top="531" Canvas.Left="15"/>
-
-                                        <Line X1="40" Y1="571" X2="60" Y2="571" Stroke="White" StrokeThickness="1.2" Opacity="0.8"/>
-                                        <TextBlock Text="-20" Foreground="White" FontSize="7" Canvas.Top="566" Canvas.Left="63"/>
-                                        <TextBlock Text="-20" Foreground="White" FontSize="7" Canvas.Top="566" Canvas.Left="10"/>
-                                    </Canvas>
-                                </Grid>
-
-                                <Canvas IsHitTestVisible="False">
-                                    <Rectangle Canvas.Left="49.2" Canvas.Top="2" Width="1.5" Height="8" Fill="#FF3B3B"/>
-
-                                    <Line X1="50" Y1="2" X2="50" Y2="7" Stroke="White" StrokeThickness="1">
-                                        <Line.RenderTransform>
-                                            <RotateTransform Angle="-30" CenterX="50" CenterY="50"/>
-                                        </Line.RenderTransform>
-                                    </Line>
-                                    <Line X1="50" Y1="2" X2="50" Y2="7" Stroke="White" StrokeThickness="1">
-                                        <Line.RenderTransform>
-                                            <RotateTransform Angle="30" CenterX="50" CenterY="50"/>
-                                        </Line.RenderTransform>
-                                    </Line>
-                                    <Line X1="50" Y1="2" X2="50" Y2="10" Stroke="White" StrokeThickness="1.5">
-                                        <Line.RenderTransform>
-                                            <RotateTransform Angle="-60" CenterX="50" CenterY="50"/>
-                                        </Line.RenderTransform>
-                                    </Line>
-                                    <Line X1="50" Y1="2" X2="50" Y2="10" Stroke="White" StrokeThickness="1.5">
-                                        <Line.RenderTransform>
-                                            <RotateTransform Angle="60" CenterX="50" CenterY="50"/>
-                                        </Line.RenderTransform>
-                                    </Line>
-                                </Canvas>
-
-                                <Canvas IsHitTestVisible="False">
-                                    <Line X1="25" Y1="50" X2="42" Y2="50" Stroke="Yellow" StrokeThickness="2.5"/>
-                                    <Line X1="58" Y1="50" X2="75" Y2="50" Stroke="Yellow" StrokeThickness="2.5"/>
-                                    <Ellipse Canvas.Left="46.5" Canvas.Top="46.5" Width="7" Height="7" Fill="Yellow"/>
-                                </Canvas>
-                            </Grid>
-                        </Border>
-
-                        <Border Width="100" Height="100" CornerRadius="50" Margin="10"
-                    BorderBrush="White" BorderThickness="1.5" Background="#CC000000">
-                            <Grid>
-                                <Grid>
-                                    <Grid.RenderTransform>
-                                        <RotateTransform Angle="{Binding HeadingOffset}" CenterX="50" CenterY="50"/>
-                                    </Grid.RenderTransform>
-
-                                    <Canvas Width="100" Height="100">
-                                        <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
-                                            <Line.RenderTransform>
-                                                <RotateTransform Angle="30" CenterX="50" CenterY="50"/>
-                                            </Line.RenderTransform>
-                                        </Line>
-                                        <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
-                                            <Line.RenderTransform>
-                                                <RotateTransform Angle="60" CenterX="50" CenterY="50"/>
-                                            </Line.RenderTransform>
-                                        </Line>
-                                        <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
-                                            <Line.RenderTransform>
-                                                <RotateTransform Angle="120" CenterX="50" CenterY="50"/>
-                                            </Line.RenderTransform>
-                                        </Line>
-                                        <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
-                                            <Line.RenderTransform>
-                                                <RotateTransform Angle="150" CenterX="50" CenterY="50"/>
-                                            </Line.RenderTransform>
-                                        </Line>
-                                        <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
-                                            <Line.RenderTransform>
-                                                <RotateTransform Angle="210" CenterX="50" CenterY="50"/>
-                                            </Line.RenderTransform>
-                                        </Line>
-                                        <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
-                                            <Line.RenderTransform>
-                                                <RotateTransform Angle="240" CenterX="50" CenterY="50"/>
-                                            </Line.RenderTransform>
-                                        </Line>
-                                        <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
-                                            <Line.RenderTransform>
-                                                <RotateTransform Angle="300" CenterX="50" CenterY="50"/>
-                                            </Line.RenderTransform>
-                                        </Line>
-                                        <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
-                                            <Line.RenderTransform>
-                                                <RotateTransform Angle="330" CenterX="50" CenterY="50"/>
-                                            </Line.RenderTransform>
-                                        </Line>
-                                    </Canvas>
-
-                                    <TextBlock Text="N" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,2,0,0"/>
-                                    <TextBlock Text="S" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
-                                    <TextBlock Text="E" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,2,0"/>
-                                    <TextBlock Text="W" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="2,0,0,0"/>
-                                </Grid>
-
-                                <Viewbox Width="30" Height="30">
-                                    <Canvas Width="100" Height="100">
-                                        <Path Fill="#EE3424" Data="M 50,0 L 100,100 L 50,75 Z"/>
-                                        <Path Fill="#C72B27" Data="M 50,0 L 0,100 L 50,75 Z"/>
-                                    </Canvas>
-                                </Viewbox>
-                                <Path Data="M 0,0 L 8,0 L 4,8 Z" Fill="Yellow" HorizontalAlignment="Center" VerticalAlignment="Top"/>
-                            </Grid>
-                        </Border>
-
-                    </StackPanel>
-                </Popup>
             </Grid>
 
             <Border Grid.Row="2" Background="#1A1A1A" BorderBrush="#34495E" BorderThickness="0,2,0,0">
-                <UniformGrid Columns="5" Margin="10,0">
+                <UniformGrid Columns="7" Margin="10,0">
+
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Lattitude" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Latitude, StringFormat={}{0:F5}}" Style="{StaticResource ValueText}"/>
+                        <TextBlock Text="Pitch" Style="{StaticResource LabelText}"/>
+                        <TextBlock Text="{Binding Drone.Pitch, StringFormat={}{0:F1}°}" Style="{StaticResource ValueText}"/>
                     </StackPanel>
+
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Longitude" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Longitude, StringFormat={}{0:F5}}" Style="{StaticResource ValueText}"/>
+                        <TextBlock Text="Roll" Style="{StaticResource LabelText}"/>
+                        <TextBlock Text="{Binding Drone.Roll, StringFormat={}{0:F1}°}" Style="{StaticResource ValueText}"/>
                     </StackPanel>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Yaw" Style="{StaticResource LabelText}"/>
+                        <TextBlock Text="{Binding Drone.Yaw, StringFormat={}{0:F1}°}" Style="{StaticResource ValueText}"/>
+                    </StackPanel>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Cur Altitude" Style="{StaticResource LabelText}"/>
+                        <TextBlock Text="{Binding Drone.Altitude, StringFormat={}{0:F1} m}" Style="{StaticResource ValueText}" Foreground="#2ECC71"/>
+                    </StackPanel>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Cur Speed" Style="{StaticResource LabelText}"/>
+                        <TextBlock Text="{Binding Drone.Speed, StringFormat={}{0:F1} m/s}" Style="{StaticResource ValueText}" Foreground="#3498DB"/>
+                    </StackPanel>
+
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Altitude" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Altitude, StringFormat={}{0:F1}m}" Style="{StaticResource ValueText}" Foreground="#2ECC71"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">
+                            <Button Content="-" Command="{Binding DecreaseAltitudeCommand}" 
+                        Width="25" Height="25" Background="#34495E" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
+
+                            <TextBox Text="{Binding Drone.TargetAltitude, UpdateSourceTrigger=PropertyChanged}" 
+                         Width="50" Height="25" Background="Transparent" Foreground="#2ECC71" 
+                         FontWeight="Bold" FontSize="16" TextAlignment="Center" 
+                         BorderThickness="0,0,0,1" BorderBrush="#4A5568" Margin="5,0"/>
+
+                            <Button Content="+" Command="{Binding IncreaseAltitudeCommand}" 
+                        Width="25" Height="25" Background="#34495E" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
+                        </StackPanel>
                     </StackPanel>
+
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Speed" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding Drone.Speed}" Style="{StaticResource ValueText}" Foreground="#3498DB"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">
+                            <Button Content="-" Command="{Binding DecreaseSpeedCommand}" 
+                        Width="25" Height="25" Background="#34495E" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
+
+                            <TextBox Text="{Binding Drone.TargetSpeed, UpdateSourceTrigger=PropertyChanged}" 
+                         Width="50" Height="25" Background="Transparent" Foreground="#3498DB" 
+                         FontWeight="Bold" FontSize="16" TextAlignment="Center" 
+                         BorderThickness="0,0,0,1" BorderBrush="#4A5568" Margin="5,0"/>
+
+                            <Button Content="+" Command="{Binding IncreaseSpeedCommand}" 
+                        Width="25" Height="25" Background="#34495E" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
+                        </StackPanel>
                     </StackPanel>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="WAYPOINT" Style="{StaticResource LabelText}"/>
-                        <TextBlock Text="{Binding MissionProgress, FallbackValue='0 / 0'}" Style="{StaticResource ValueText}" Foreground="#E67E22"/>
-                    </StackPanel>
+
                 </UniformGrid>
             </Border>
         </Grid>
@@ -345,12 +307,11 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="1.2*"/>
-                    <RowDefinition Height="0.8*"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Text="COMMAND CENTER" Foreground="White" FontSize="18" Margin="0,0,0,15"/>
+                <TextBlock Grid.Row="0" Text="Command Button" Foreground="White" FontSize="18" Margin="0,0,0,15"/>
 
                 <UniformGrid Grid.Row="1" Columns="2" Margin="0,0,0,10">
                     <Button Content="Mission Start" Command="{Binding StartMissionCommand}" Background="#E74C3C" Style="{StaticResource GcsButton}"/>
@@ -362,9 +323,16 @@
                     <Button Content="Return" Command="{Binding RtlCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="Arm" Command="{Binding ArmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="Disarm" Command="{Binding DisarmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
+
+                    <ToggleButton x:Name="ManualModeToggle" 
+                                          Content="Manual Mode" 
+                                          Style="{StaticResource GcsToggleButton}"
+                                          Checked="ManualModeToggle_Checked" 
+                                          Unchecked="ManualModeToggle_Unchecked"/>
                 </UniformGrid>
 
                 <Border Grid.Row="2" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,10">
+<<<<<<< HEAD
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -379,50 +347,157 @@
                                   Background="Transparent" Foreground="White" 
                                   RowBackground="Transparent" GridLinesVisibility="None" 
                                   SelectionMode="Single" BorderThickness="0">
+=======
+                    <StackPanel Orientation="Vertical">
+                        <TextBlock Text="Flight Instruments" Foreground="#3B82F6" FontWeight="Bold" FontSize="12" Margin="0,0,0,5" HorizontalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" IsHitTestVisible="False">
+>>>>>>> suyoung
 
-                            <DataGrid.Resources>
-                                <Style TargetType="DataGridColumnHeader">
-                                    <Setter Property="Background" Value="#1E293B"/>
-                                    <Setter Property="Foreground" Value="#94A3B8"/>
-                                    <Setter Property="FontWeight" Value="Bold"/>
-                                    <Setter Property="Padding" Value="5,8"/>
-                                    <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                                    <Setter Property="BorderBrush" Value="#334155"/>
-                                </Style>
+                            <Border Width="100" Height="100" CornerRadius="50" Margin="10,5,10,10" BorderBrush="White" BorderThickness="1.5" Background="#222">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="10" Opacity="0.5" Direction="225"/>
+                                </Border.Effect>
+                                <Grid>
+                                    <Grid.Clip>
+                                        <EllipseGeometry Center="50,50" RadiusX="49" RadiusY="49"/>
+                                    </Grid.Clip>
+                                    <Grid x:Name="HorizonContainer" Height="1000" VerticalAlignment="Center">
+                                        <Grid.RenderTransform>
+                                            <TransformGroup>
+                                                <TranslateTransform Y="{Binding PitchOffset}"/>
+                                                <RotateTransform Angle="{Binding Drone.Roll}" CenterX="50" CenterY="500"/>
+                                            </TransformGroup>
+                                        </Grid.RenderTransform>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+                                        <Rectangle Grid.Row="0" Fill="#4472C4"/>
+                                        <Rectangle Grid.Row="1" Fill="#638C3C"/>
+                                        <Canvas>
+                                            <Rectangle Canvas.Top="499" Width="100" Height="2" Fill="White" Opacity="0.8"/>
+                                            <Line X1="35" Y1="464.5" X2="65" Y2="464.5" Stroke="White" StrokeThickness="1.5"/>
+                                            <TextBlock Text="10" Foreground="White" FontSize="7" Canvas.Top="460" Canvas.Left="68"/>
+                                            <TextBlock Text="10" Foreground="White" FontSize="7" Canvas.Top="460" Canvas.Left="22"/>
+                                            <Line X1="40" Y1="429" X2="60" Y2="429" Stroke="White" StrokeThickness="1.2" Opacity="0.8"/>
+                                            <TextBlock Text="20" Foreground="White" FontSize="7" Canvas.Top="424" Canvas.Left="63"/>
+                                            <TextBlock Text="20" Foreground="White" FontSize="7" Canvas.Top="424" Canvas.Left="28"/>
+                                            <Line X1="45" Y1="393.5" X2="55" Y2="393.5" Stroke="White" StrokeThickness="1" Opacity="0.6"/>
+                                            <TextBlock Text="30" Foreground="White" FontSize="6" Canvas.Top="389" Canvas.Left="58"/>
+                                            <TextBlock Text="30" Foreground="White" FontSize="6" Canvas.Top="389" Canvas.Left="35"/>
+                                            <Line X1="35" Y1="535.5" X2="65" Y2="535.5" Stroke="White" StrokeThickness="1.5"/>
+                                            <TextBlock Text="-10" Foreground="White" FontSize="7" Canvas.Top="531" Canvas.Left="68"/>
+                                            <TextBlock Text="-10" Foreground="White" FontSize="7" Canvas.Top="531" Canvas.Left="15"/>
+                                            <Line X1="40" Y1="571" X2="60" Y2="571" Stroke="White" StrokeThickness="1.2" Opacity="0.8"/>
+                                            <TextBlock Text="-20" Foreground="White" FontSize="7" Canvas.Top="566" Canvas.Left="63"/>
+                                            <TextBlock Text="-20" Foreground="White" FontSize="7" Canvas.Top="566" Canvas.Left="10"/>
+                                        </Canvas>
+                                    </Grid>
+                                    <Canvas IsHitTestVisible="False">
+                                        <Rectangle Canvas.Left="49.2" Canvas.Top="2" Width="1.5" Height="8" Fill="#FF3B3B"/>
+                                        <Line X1="50" Y1="2" X2="50" Y2="7" Stroke="White" StrokeThickness="1">
+                                            <Line.RenderTransform>
+                                                <RotateTransform Angle="-30" CenterX="50" CenterY="50"/>
+                                            </Line.RenderTransform>
+                                        </Line>
+                                        <Line X1="50" Y1="2" X2="50" Y2="7" Stroke="White" StrokeThickness="1">
+                                            <Line.RenderTransform>
+                                                <RotateTransform Angle="30" CenterX="50" CenterY="50"/>
+                                            </Line.RenderTransform>
+                                        </Line>
+                                        <Line X1="50" Y1="2" X2="50" Y2="10" Stroke="White" StrokeThickness="1.5">
+                                            <Line.RenderTransform>
+                                                <RotateTransform Angle="-60" CenterX="50" CenterY="50"/>
+                                            </Line.RenderTransform>
+                                        </Line>
+                                        <Line X1="50" Y1="2" X2="50" Y2="10" Stroke="White" StrokeThickness="1.5">
+                                            <Line.RenderTransform>
+                                                <RotateTransform Angle="60" CenterX="50" CenterY="50"/>
+                                            </Line.RenderTransform>
+                                        </Line>
+                                    </Canvas>
+                                    <Canvas IsHitTestVisible="False">
+                                        <Line X1="25" Y1="50" X2="42" Y2="50" Stroke="Yellow" StrokeThickness="2.5"/>
+                                        <Line X1="58" Y1="50" X2="75" Y2="50" Stroke="Yellow" StrokeThickness="2.5"/>
+                                        <Ellipse Canvas.Left="46.5" Canvas.Top="46.5" Width="7" Height="7" Fill="Yellow"/>
+                                    </Canvas>
+                                </Grid>
+                            </Border>
 
-                                <Style TargetType="DataGridRow">
-                                    <Style.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter Property="Background" Value="#3B82F6"/>
-                                            <Setter Property="Foreground" Value="White"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </DataGrid.Resources>
-
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="ID" Binding="{Binding ID}" Width="*"/>
-                                <DataGridTextColumn Header="TYPE" Binding="{Binding TargetType}" Width="*"/>
-                                <DataGridTextColumn Header="LAT" Binding="{Binding Lat, StringFormat={}{0:F5}}" Width="*"/>
-                                <DataGridTextColumn Header="LNG" Binding="{Binding Lng, StringFormat={}{0:F5}}" Width="*"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </Grid>
+                            <Border Width="100" Height="100" CornerRadius="50" Margin="10,5,10,10" BorderBrush="White" BorderThickness="1.5" Background="#111">
+                                <Grid>
+                                    <Grid>
+                                        <Grid.RenderTransform>
+                                            <RotateTransform Angle="{Binding HeadingOffset}" CenterX="50" CenterY="50"/>
+                                        </Grid.RenderTransform>
+                                        <Canvas Width="100" Height="100">
+                                            <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
+                                                <Line.RenderTransform>
+                                                    <RotateTransform Angle="30" CenterX="50" CenterY="50"/>
+                                                </Line.RenderTransform>
+                                            </Line>
+                                            <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
+                                                <Line.RenderTransform>
+                                                    <RotateTransform Angle="60" CenterX="50" CenterY="50"/>
+                                                </Line.RenderTransform>
+                                            </Line>
+                                            <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
+                                                <Line.RenderTransform>
+                                                    <RotateTransform Angle="120" CenterX="50" CenterY="50"/>
+                                                </Line.RenderTransform>
+                                            </Line>
+                                            <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
+                                                <Line.RenderTransform>
+                                                    <RotateTransform Angle="150" CenterX="50" CenterY="50"/>
+                                                </Line.RenderTransform>
+                                            </Line>
+                                            <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
+                                                <Line.RenderTransform>
+                                                    <RotateTransform Angle="210" CenterX="50" CenterY="50"/>
+                                                </Line.RenderTransform>
+                                            </Line>
+                                            <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
+                                                <Line.RenderTransform>
+                                                    <RotateTransform Angle="240" CenterX="50" CenterY="50"/>
+                                                </Line.RenderTransform>
+                                            </Line>
+                                            <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
+                                                <Line.RenderTransform>
+                                                    <RotateTransform Angle="300" CenterX="50" CenterY="50"/>
+                                                </Line.RenderTransform>
+                                            </Line>
+                                            <Line X1="50" Y1="5" X2="50" Y2="12" Stroke="#AAAAAA" StrokeThickness="1.5">
+                                                <Line.RenderTransform>
+                                                    <RotateTransform Angle="330" CenterX="50" CenterY="50"/>
+                                                </Line.RenderTransform>
+                                            </Line>
+                                        </Canvas>
+                                        <TextBlock Text="N" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,2,0,0"/>
+                                        <TextBlock Text="S" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
+                                        <TextBlock Text="E" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,2,0"/>
+                                        <TextBlock Text="W" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                                    </Grid>
+                                    <Viewbox Width="30" Height="30">
+                                        <Canvas Width="100" Height="100">
+                                            <Path Fill="#EE3424" Data="M 50,0 L 100,100 L 50,75 Z"/>
+                                            <Path Fill="#C72B27" Data="M 50,0 L 0,100 L 50,75 Z"/>
+                                        </Canvas>
+                                    </Viewbox>
+                                    <Path Data="M 0,0 L 8,0 L 4,8 Z" Fill="Yellow" HorizontalAlignment="Center" VerticalAlignment="Top"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
                 </Border>
 
-                <Border Grid.Row="3" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,10">
+                <Border Grid.Row="3" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,0">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel>
-                            <TextBlock Text="SYSTEM LOG" Foreground="#64748B" FontWeight="Bold" FontSize="12" Margin="0,0,0,5"/>
+                            <TextBlock Text="System Log" Foreground="#64748B" FontWeight="Bold" FontSize="12" Margin="0,0,0,5"/>
                             <TextBlock Text="{Binding ChatLog}" Foreground="#94A3B8" TextWrapping="Wrap" FontSize="12"/>
                         </StackPanel>
                     </ScrollViewer>
                 </Border>
-
-                <UniformGrid Grid.Row="4" Columns="2">
-                    <Button Content="START TRACK" Command="{Binding FollowCommand}" Background="#3B82F6" Style="{StaticResource GcsButton}"/>
-                    <Button Content="STOP TRACK" Command="{Binding StopTrackingCommand}" Background="#64748B" Style="{StaticResource GcsButton}"/>
-                </UniformGrid>
             </Grid>
         </Border>
     </Grid>

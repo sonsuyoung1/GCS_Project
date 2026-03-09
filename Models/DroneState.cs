@@ -22,6 +22,12 @@ namespace GCS_Project.Models
         private bool _isTargetDetected;
         private double _targetLat;
         private double _targetLng;
+        private double _roll;
+        private double _pitch;
+        private double _yaw;
+        private double _targetAltitude = 5.0;
+        private double _targetSpeed = 2.0;
+
 
         // 2. 속성 선언 (SetProperty 방식 적용)
         public double Latitude { get => _latitude; set => SetProperty(ref _latitude, value); }
@@ -34,13 +40,15 @@ namespace GCS_Project.Models
         public int BatteryPercent { get => _batteryPercent; set => SetProperty(ref _batteryPercent, value); }
         public bool IsArmed { get => _isArmed; set => SetProperty(ref _isArmed, value); }
 
-        // 어차피 뷰모델이 가져다 계산만 할 거니까 알림 장치 다 떼고 순수하게 값만 저장.
-        public double Pitch { get; set; }
-        public double Roll { get; set; }
-        public double Heading { get; set; }
+        public double Roll { get => _roll; set => SetProperty(ref _roll, value); }
+        public double Pitch { get => _pitch; set => SetProperty(ref _pitch, value); }
+        public double Yaw { get => _yaw; set => SetProperty(ref _yaw, value); }
 
         public bool IsTargetDetected { get => _isTargetDetected; set => SetProperty(ref _isTargetDetected, value); }
         public double TargetLat { get => _targetLat; set => SetProperty(ref _targetLat, value); }
         public double TargetLng { get => _targetLng; set => SetProperty(ref _targetLng, value); }
+
+        public double TargetAltitude { get => _targetAltitude; set => SetProperty(ref _targetAltitude, value); }
+        public double TargetSpeed { get => _targetSpeed; set => SetProperty(ref _targetSpeed, value); }
     }
 }
