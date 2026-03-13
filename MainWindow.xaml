@@ -464,13 +464,53 @@
                     </StackPanel>
                 </Border>
 
-                <Border Grid.Row="3" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,0">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel>
-                            <TextBlock Text="System Log" Foreground="#64748B" FontWeight="Bold" FontSize="12" Margin="0,0,0,5"/>
-                            <TextBlock Text="{Binding ChatLog}" Foreground="#94A3B8" TextWrapping="Wrap" FontSize="12"/>
-                        </StackPanel>
-                    </ScrollViewer>
+                <Border Grid.Row="3" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,5,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Text="System Log and AI Command" Foreground="#3B82F6" 
+                   FontWeight="Bold" FontSize="11" Margin="0,0,0,5"/>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,5">
+                            <TextBox Text="{Binding ChatLog, Mode=OneWay}" 
+                                            Foreground="White"
+                                             IsReadOnly="True" 
+                                             TextWrapping="Wrap" 
+                                             VerticalScrollBarVisibility="Auto" 
+                                             Background="Transparent" 
+                                             BorderThickness="0" 
+                                             FontSize="14" />
+                        </ScrollViewer>
+
+                        <Border Grid.Row="2" Background="#1E293B" CornerRadius="5" Padding="5">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Text=">" Foreground="#38BDF8" FontWeight="Bold" 
+                                                    VerticalAlignment="Center" Margin="5,0,5,0"/>
+
+                                <TextBox Grid.Column="1" Text="{Binding UserInputCommand, UpdateSourceTrigger=PropertyChanged}" 
+                                                 Background="Transparent" Foreground="#F1F5F9" BorderThickness="0" 
+                                                 CaretBrush="#38BDF8" VerticalContentAlignment="Center" FontSize="12">
+                                    <TextBox.InputBindings>
+                                        <KeyBinding Key="Enter" Command="{Binding SendAICommand}"/>
+                                    </TextBox.InputBindings>
+                                </TextBox>
+
+                                <Button Grid.Column="2" Content="SEND" Command="{Binding SendAICommand}"
+                                                Background="Transparent" Foreground="#38BDF8" FontSize="10" 
+                                                FontWeight="Bold" BorderThickness="0" Cursor="Hand" Margin="5,0,0,0"/>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Border>
             </Grid>
         </Border>
