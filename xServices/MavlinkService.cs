@@ -60,7 +60,7 @@ namespace GCS_Project.xServices
         /// <summary>
         /// MAVLink 프로토콜과 UDP 라우터를 초기화하여 기체를 탐색하고, 연결이 완료되면 데이터 스트림을 활성화합니다.
         /// </summary>
-        public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14550, string droneIp = "192.168.1.136") // ip는 와이파이 달라질 때마다 바꿔면 됨
+        public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14550, string droneIp = "192.168.0.72") // ip는 와이파이 달라질 때마다 바꿔면 됨
         {
             if (_router != null) return;
 

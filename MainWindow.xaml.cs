@@ -53,7 +53,7 @@ namespace GCS_Project
             }
             await InitializeMapAsync();
 
-            // PlayRtpStream(_mp1);
+            PlayRtpStream(_mp1);
         }
 
         private async Task InitializeMapAsync()
@@ -310,7 +310,7 @@ namespace GCS_Project
         {
             if (mp == null || _libVLC == null) return;
 
-            string sdpPath = @"C:\Users\LAAA\Desktop\stream.sdp";
+            string sdpPath = @"C:\Users\Master\OneDrive\바탕 화면\stream.sdp";
 
             if (!File.Exists(sdpPath))
             {
