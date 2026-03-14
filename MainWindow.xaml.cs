@@ -16,7 +16,7 @@ namespace GCS_Project
     {
         #region [1. 필드 (Fields)]
         private MapController? _mapController;
-        private MainViewModel? _viewModel;
+        private ViewModel? _viewModel;
         private LibVLC? _libVLC;
         private LibVLCSharp.Shared.MediaPlayer? _mp1;
         #endregion
@@ -27,7 +27,7 @@ namespace GCS_Project
         {
             InitializeComponent(); // XAML으로 UI구현한 것을 실제 메모리에 올리고 조립.
 
-            _viewModel = new MainViewModel();
+            _viewModel = new ViewModel();
             this.DataContext = _viewModel;
 
             // ===== [VIDEO INIT] =====
