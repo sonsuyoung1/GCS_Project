@@ -117,18 +117,15 @@ namespace GCS_Project.ViewModels
         public ICommand DecreaseAltitudeCommand { get; }
         public ICommand IncreaseSpeedCommand { get; }
         public ICommand DecreaseSpeedCommand { get; }
+        public ICommand StopTrackingCommand { get; }
         #endregion
 
 
         #region [4. 이벤트 (View 통신용)]
         public event Action? UndoWaypointRequested;
         public event Action? ClearWaypointsRequested;
-<<<<<<< HEAD
-        public event Action<double, double, double>? PositionUpdated; // 03/02
-=======
         public event Action? AllClearRequested;
         public event Action<double, double, double>? PositionUpdated;
->>>>>>> suyoung
         public event Action<double, double>? TakeoffPointSet;
         public event Action<double, double>? PersonDetectedOnMap;
         #endregion
@@ -149,8 +146,9 @@ namespace GCS_Project.ViewModels
             UndoWaypointCommand = new RelayCommand(ExecuteUndoWaypoint, () => IsUndoEnabled);
             ClearWaypointsCommand = new RelayCommand(ExecuteClearWaypoints, () => IsClearEnabled);
             FollowCommand = new RelayCommand(ExecuteFollow, () => IsFollowEnabled);
-            StopMissionCommand = new RelayCommand(ExecuteStopMission, () => IsStopEnabled);
-            // StopTrackingCommand = new RelayCommand(ExecuteStopTracking, () => IsStopEnabled);
+            //StopMissionCommand = new RelayCommand(ExecuteStopMission, () => IsStopEnabled);
+            //StopTrackingCommand = new RelayCommand(ExecuteStopTracking, () => FlightMode == MODE_TRACKING);
+
             IncreaseAltitudeCommand = new RelayCommand(async () =>
             {
                 if (Drone.TargetAltitude < 100)
@@ -320,11 +318,7 @@ namespace GCS_Project.ViewModels
                 _lastMapUpdate = DateTime.UtcNow;
 
                 // 1. 드론 현재 위치 업데이트
-<<<<<<< HEAD
-                PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Heading); //03/02
-=======
                 PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
->>>>>>> suyoung
 
                 // 2. 이륙 마커 업데이트 (스위치를 확인해서 '딱 한 번만' 그립니다!)
                 if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue && !_isTakeoffMarkerDrawn)

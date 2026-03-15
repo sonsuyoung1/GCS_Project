@@ -1,20 +1,18 @@
-﻿using GCS_Project.Models;
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.ComponentModel;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+
+using GCS_Project.Models;
 using GCS_Project.Services;
 using GCS_Project.ViewModels;
+
 using LibVLCSharp.Shared;
 using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.Wpf;
-using System;
-using System.IO;
-using System.Windows;
-using System.Windows.Controls.Primitives;
-using System.Windows.Input;
-<<<<<<< HEAD
-using System.Windows.Controls;
-using System.ComponentModel;
-using System.Linq;
-=======
->>>>>>> suyoung
 
 namespace GCS_Project
 {
@@ -56,8 +54,11 @@ namespace GCS_Project
             //나중에 최적화
             _overlayTimer.Tick += (s, e) =>
             {
-                RedrawBboxes();
-                _overlayDirty = false;
+                if (_overlayDirty)
+                {
+                    RedrawBboxes();
+                    _overlayDirty = false;
+                }
             };
             _overlayTimer.Start();
 
@@ -226,11 +227,7 @@ namespace GCS_Project
         {
             if (_viewModel == null || _mapController == null) return;
 
-<<<<<<< HEAD
             // 1. 드론 실시간 위치 업데이트 
-=======
-            // 1. 드론 실시간 위치 업데이트
->>>>>>> suyoung
             _viewModel.PositionUpdated += (lat, lng, heading) => //03/02
             {
                 Dispatcher.InvokeAsync(async () =>
@@ -264,18 +261,24 @@ namespace GCS_Project
 
             _viewModel.ClearWaypointsRequested += async () =>
             {
-                await Dispatcher.InvokeAsync(async () => {
-                    await _mapController.ClearAllWaypointsOnMap();
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    if (_mapController != null)
+                    {
+                        await _mapController.ClearAllWaypointsOnMap();
+                    }
                 });
             };
 
             _viewModel.AllClearRequested += async () =>
             {
-                await Dispatcher.InvokeAsync(async () => {
+                await Dispatcher.InvokeAsync(async () =>
+                {
                     await _mapController.ClearAllOnMap();
+                    await mapWebView.ExecuteScriptAsync("clearAllMapElements()");
                 });
             };
-            
+
 
             /*// 4. YOLO 다중 타겟 실시간 업데이트 및 이동
             // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.

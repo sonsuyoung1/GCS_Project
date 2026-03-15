@@ -26,10 +26,7 @@ namespace GCS_Project.Services
 
         // 드론의 위도와 경도를 받아 지도의 마커 위치를 갱신.
         // 드론 위치 업데이트
-<<<<<<< HEAD
         // 03/02 heading 수정
-=======
->>>>>>> suyoung
         public async Task UpdateDroneLocation(double lat, double lng, double heading)
         {
             if (_webView?.CoreWebView2 != null)
