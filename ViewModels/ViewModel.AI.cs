@@ -1,4 +1,5 @@
-﻿using GCS_Project.Models;
+﻿using GCS_Project.Data;
+using GCS_Project.Models;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -14,7 +15,7 @@ namespace GCS_Project.ViewModels
         #region [ AI 로직(제미나이) ]
         private readonly string _geminiApiKey = "AIzaSyBX3h7Ftj6N88_Fw43ZSzACxRYwYvK2PkI";
 
-        // 13. AI 명령 전송 실행
+        // AI 명령 전송 실행
         private async Task ExecuteSendAICommand()
         {
             if (string.IsNullOrWhiteSpace(UserInputCommand)) return;
@@ -24,10 +25,19 @@ namespace GCS_Project.ViewModels
 
             ChatLog += $"\n[{DateTime.Now:HH:mm:ss}] USER >> {userMsg}";
 
+            // [DB 저장] 사용자의 명령 기록
+            await Task.Run(() => {
+                using (var db = new AppDbContext())
+                {
+                    db.SystemLogs.Add(new SystemLog { Timestamp = DateTime.Now, Sender = "USER", Message = userMsg });
+                    db.SaveChanges();
+                }
+            });
+
             // 1. AI에게 JSON 형태의 응답을 받아옵니다.
             string aiJsonResponse = await GetGeminiResponse(userMsg);
 
-            // ✨ [추가된 방어막] 통신 실패 메시지가 오면 JSON 파싱 안 하고 바로 출력!
+            // [추가된 방어막] 통신 실패 메시지가 오면 JSON 파싱 안 하고 바로 출력!
             if (aiJsonResponse.StartsWith("[통신 실패]") || aiJsonResponse.StartsWith("[오류 발생]"))
             {
                 ChatLog += $"\n{aiJsonResponse}";
@@ -63,6 +73,15 @@ namespace GCS_Project.ViewModels
                 // 3. AI의 친절한 대답은 로그에 출력
                 ChatLog += $"\n[{DateTime.Now:HH:mm:ss}] AI >> {aiCommand.Message}";
 
+                // [DB 저장] 제미나이 AI의 답변 기록
+                await Task.Run(() => {
+                    using (var db = new AppDbContext())
+                    {
+                        db.SystemLogs.Add(new SystemLog { Timestamp = DateTime.Now, Sender = "AI", Message = aiCommand.Message });
+                        db.SaveChanges();
+                    }
+                });
+
                 // 4. AI의 판단(Action)에 따라 MavlinkService로 명령을 넘깁니다!!
                 switch (aiCommand.Action)
                 {
@@ -91,7 +110,7 @@ namespace GCS_Project.ViewModels
             }
         }
 
-        // 13 - 1 제미나이 API 연동 함수 (현재는 시뮬레이션)
+        // 제미나이 API 연동 함수 (현재는 시뮬레이션)
         private async Task<string> GetGeminiResponse(string input)
         {
             try
