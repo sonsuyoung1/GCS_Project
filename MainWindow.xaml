@@ -97,13 +97,8 @@
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-<<<<<<< HEAD
-<!-- 03/08 수정-->
-            <Border Grid.Row="1" Background="#0B1220" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="4" Margin="0,0,0,6">
-=======
 
             <Border Grid.Row="0" Background="#0B1220" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="4" Margin="0,0,0,10">
->>>>>>> suyoung
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -127,7 +122,7 @@
                     </Grid.RowDefinitions>
                     <TextBlock Text="Detected Targets" Foreground="#3B82F6" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
                     <DataGrid Grid.Row="1" 
-                              ItemsSource="{Binding MavlinkService.DetectedTargets}" 
+                              ItemsSource="{Binding DetectedTargets}" 
                               SelectedItem="{Binding SelectedTarget, Mode=TwoWay}" 
                               AutoGenerateColumns="False" IsReadOnly="True" 
                               Background="Transparent" Foreground="White" 
@@ -166,6 +161,7 @@
                 <Button Content="Stop Track" Command="{Binding StopTrackingCommand}" Background="#64748B" Style="{StaticResource GcsButton}"/>
             </UniformGrid>
         </Grid>
+
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="50"/>
@@ -332,26 +328,9 @@
                 </UniformGrid>
 
                 <Border Grid.Row="2" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,10">
-<<<<<<< HEAD
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Text="DETECTED TARGETS" Foreground="#3B82F6" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
-                        <!-- DataGrid는 MavlinkServicef를 직접 모르게-->
-                        <DataGrid Grid.Row="1" 
-                                  ItemsSource="{Binding DetectedTargets}" 
-                                  SelectedItem="{Binding SelectedTarget, Mode=TwoWay}" 
-                                  AutoGenerateColumns="False" IsReadOnly="True" 
-                                  Background="Transparent" Foreground="White" 
-                                  RowBackground="Transparent" GridLinesVisibility="None" 
-                                  SelectionMode="Single" BorderThickness="0">
-=======
                     <StackPanel Orientation="Vertical">
                         <TextBlock Text="Flight Instruments" Foreground="#3B82F6" FontWeight="Bold" FontSize="12" Margin="0,0,0,5" HorizontalAlignment="Center"/>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" IsHitTestVisible="False">
->>>>>>> suyoung
 
                             <Border Width="100" Height="100" CornerRadius="50" Margin="10,5,10,10" BorderBrush="White" BorderThickness="1.5" Background="#222">
                                 <Border.Effect>
