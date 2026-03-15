@@ -17,43 +17,26 @@ namespace GCS_Project.ViewModels
             if (_mavStarting) return;
             _mavStarting = true;
 
-            try
-            {
-                // 2. 인자는 깔끔하게 비웁니다! (서비스의 기본값 사용)
-                await _mavlinkService.StartAsync();
-                ChatLog += "\n[시스템] MAVLink 연결 성공";
-            }
-            catch (Exception ex)
-            {
-                // 3. 에러 방패 (포트가 이미 사용 중이거나 와이파이가 끊겼을 때 프로그램이 안 뻗음)
-                ChatLog += $"\n[오류] MAVLink 시작 실패: {ex.Message}";
-            }
-            finally
-            {
-                // 4. 문지기 퇴근
-                _mavStarting = false;
-            }
-
-            // 드론의 데이터 업데이트
+            // ===== 1. 이벤트 구독 먼저 =====
             _mavlinkService.OnDataUpdated += (state) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() => HandleDroneData(state));
             };
 
-            // 웨이포인트 개수 변화
             _mavlinkService.OnWaypointCountChanged += (count) =>
             {
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     _currentWaypointCount = count;
                     NotifyCommandStates();
-                    ChatLog += $"\n[시스템] 웨이포인트 개수 동기화 됨: {count}개"; // 확인용 로그
+                    ChatLog += $"\n[시스템] 웨이포인트 개수 동기화 됨: {count}개";
                 });
             };
 
             _mavlinkService.OnMissionCompleted += () =>
             {
-                Application.Current.Dispatcher.BeginInvoke(() => {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
                     FlightMode = MODE_TAKEOFF;
                     ChatLog += "\n모든 목적지에 도착하여 미션을 종료합니다.";
                 });
@@ -66,6 +49,40 @@ namespace GCS_Project.ViewModels
                     ChatLog += $"\n{message}";
                 });
             };
+
+            _yoloMetaUdpService.OnLogReceived += (message) =>
+            {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    ChatLog += $"\n{message}";
+                });
+            };
+
+            _yoloMetaUdpService.OnTargetsReceived += (targets) =>
+            {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    ApplyDetectedTargets(targets);
+                });
+            };
+
+            try
+            {
+                await _mavlinkService.StartAsync();
+                ChatLog += "\n[시스템] MAVLink 연결 성공";
+
+                await _yoloMetaUdpService.StartAsync();
+                ChatLog += "\n[시스템] YOLO UDP 메타 수신 시작";
+            }
+            catch (Exception ex)
+            {
+                ChatLog += $"\n[오류] 서비스 시작 실패: {ex.Message}";
+            }
+            finally
+            {
+                _mavStarting = false;
+            }
+
 
             // 타겟 업데이트
             /*_mavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
@@ -150,6 +167,39 @@ namespace GCS_Project.ViewModels
                 FlightMode = MODE_IDLE;
                 _isFlyingHigh = false;
                 ChatLog += "\n[시스템] 고도 저하 감지. 대기 상태로 전환합니다.";
+            }
+        }
+
+        private void ApplyDetectedTargets(List<DetectedTarget> targets)
+        {
+            _detectedTargets.Clear();
+
+            foreach (var target in targets)
+            {
+                _detectedTargets.Add(target);
+            }
+            if (SelectedTarget != null)
+            {
+                DetectedTarget? matched = null;
+
+                foreach (var t in _detectedTargets)
+                {
+                    if (t.ID == SelectedTarget.ID)
+                    {
+                        matched = t;
+                        break;
+                    }
+                }
+
+                if (matched != null)
+                {
+                    SelectedTarget = matched;
+                    matched.IsBeingTracked = true;
+                }
+                else
+                {
+                    SelectedTarget = null;
+                }
             }
         }
 
