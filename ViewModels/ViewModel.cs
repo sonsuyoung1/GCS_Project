@@ -15,6 +15,8 @@ namespace GCS_Project.ViewModels
     public partial class ViewModel : ObservableObject // 명령 조율 역할 
     {
         #region [1. 필드 (Fields)]
+        private readonly YoloMetaUdpService _yoloMetaUdpService;
+        private readonly ObservableCollection<DetectedTarget> _detectedTargets = new();
         private readonly MavlinkService _mavlinkService;
         private DetectedTarget? _selectedTarget;
         private System.Timers.Timer _targetLostTimer;
@@ -42,6 +44,10 @@ namespace GCS_Project.ViewModels
         public MavlinkService MavlinkService => _mavlinkService;
         public DroneState Drone => _mavlinkService.CurrentState;
 
+        // 현재는 MavlinkService의 타겟 리스트를 그대로 노출
+        // 나중에 YoloMetaUdpService로 바꿔도 View/XAML 수정 없이 유지하기 위한 중간 창구
+        public ObservableCollection<DetectedTarget> DetectedTargets => _detectedTargets;
+
         // MavlinkService의 리스트를 직접 참조하도록 변경하여 메모리 중복 방지
         // public ObservableCollection<DetectedTarget> DetectedTargets => _mavlinkService.DetectedTargets;
 
@@ -58,7 +64,13 @@ namespace GCS_Project.ViewModels
         public string UserInputCommand
         {
             get => _userInputCommand;
-            set => SetProperty(ref _userInputCommand, value);
+            set
+            {
+                if (SetProperty(ref _userInputCommand, value))
+                {
+                    (SendAICommand as RelayCommand)?.NotifyCanExecuteChanged();
+                }
+            }
         }
         public string CurrentDateTime
         {
@@ -136,7 +148,7 @@ namespace GCS_Project.ViewModels
         public ViewModel()
         {
             _mavlinkService = new MavlinkService();
-
+            _yoloMetaUdpService = new YoloMetaUdpService(5001);
             // 커맨드 초기화 (로직 분리)
             StartMissionCommand = new RelayCommand(ExecuteStartMission, () => IsMissionStartEnabled);
             ArmCommand = new RelayCommand(ExecuteArm, () => IsArmEnabled);
@@ -149,7 +161,11 @@ namespace GCS_Project.ViewModels
             FollowCommand = new RelayCommand(ExecuteFollow, () => IsFollowEnabled);
             StopMissionCommand = new RelayCommand(ExecuteStopMission, () => IsStopEnabled);
             // StopTrackingCommand = new RelayCommand(ExecuteStopTracking, () => IsStopEnabled);
-            SendAICommand = new RelayCommand(async () => await ExecuteSendAICommand());
+            SendAICommand = new RelayCommand(
+                async () => await ExecuteSendAICommand(),
+                () => !string.IsNullOrWhiteSpace(UserInputCommand)
+            );
+
             IncreaseAltitudeCommand = new RelayCommand(async () =>
             {
                 if (Drone.TargetAltitude < 100)
@@ -236,6 +252,7 @@ namespace GCS_Project.ViewModels
             _targetLostTimer?.Stop();
             _targetLostTimer?.Dispose();
             _mavlinkService?.StopAsync();
+            _yoloMetaUdpService?.StopAsync();
         }
     }
 }

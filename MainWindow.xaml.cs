@@ -636,6 +636,22 @@ namespace GCS_Project
                 canvas.Children.Add(label);
             }
         }
+        //ai 엔터 커멘드 03/16 추가
+        private void AiCommandTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter)
+                return;
+
+            if (_viewModel == null)
+                return;
+
+            if (_viewModel.SendAICommand.CanExecute(null))
+            {
+                _viewModel.SendAICommand.Execute(null);
+            }
+
+            e.Handled = true;
+        }
         #endregion
     }
 }
