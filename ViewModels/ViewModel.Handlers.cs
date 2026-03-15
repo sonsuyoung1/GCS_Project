@@ -6,11 +6,14 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using GCS_Project.Data;
 
 namespace GCS_Project.ViewModels
 {
     public partial class ViewModel
     {
+        private DateTime _lastDbSaveTime = DateTime.MinValue;
+
         #region [이벤트 핸들러 (Event Handlers)]
         private async void InitializeService()
         {
@@ -87,20 +90,41 @@ namespace GCS_Project.ViewModels
                         // 드론에게 실시간 좌표 전송!
                         await _mavlinkService.GoTo(lat, lng);
                     }
+
+                    _ = Task.Run(() =>
+                    {
+                        try
+                        {
+                            using (var db = new AppDbContext())
+                            {
+                                var newTargetLog = new TargetLog
+                                {
+                                    Timestamp = DateTime.Now,
+                                    TargetType = type, // "Tank", "Vehicle" 등 YOLO가 보내준 타입
+                                    Latitude = lat,
+                                    Longitude = lng,
+                                    IsStriked = false  // 방금 발견한 거니까 아직 타격 전(false)으로 저장!
+                                };
+
+                                db.TargetLogs.Add(newTargetLog);
+                                db.SaveChanges(); // DB에 타겟 발견 기록 쾅!
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DB 오류] 타겟 저장 실패: {ex.Message}");
+                        }
+                    });
                 });
             };*/
         }
 
         private void HandleDroneData(DroneState state)
         {
-            if (!Drone.IsConnected)
-            {
-                Drone.IsConnected = true;
-            }
-
+            if (!Drone.IsConnected) Drone.IsConnected = true;
             if (state.Latitude == 0 && state.Longitude == 0) return;
 
-            // 2. 기존 위치 업데이트 로직
+            // 기존 위치 업데이트 로직
             if ((DateTime.UtcNow - _lastMapUpdate).TotalMilliseconds > 200)
             {
                 _lastMapUpdate = DateTime.UtcNow;
@@ -108,7 +132,7 @@ namespace GCS_Project.ViewModels
                 // 1. 드론 현재 위치 업데이트
                 PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
 
-                // 2. 이륙 마커 업데이트 (스위치를 확인해서 '딱 한 번만' 그립니다!)
+                // 2. 이륙 마커 업데이트 (스위치를 확인해서 딱 한 번만 그린다. )
                 if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue && !_isTakeoffMarkerDrawn)
                 {
                     TakeoffPointSet?.Invoke(state.TakeoffLat.Value, state.TakeoffLng.Value);
@@ -116,22 +140,52 @@ namespace GCS_Project.ViewModels
                 }
             }
 
-            // 3. HUD 계산
+            // DB 저장 로직
+            if ((DateTime.UtcNow - _lastDbSaveTime).TotalMilliseconds > 1000)
+            {
+                _lastDbSaveTime = DateTime.UtcNow;
+
+                // Task.Run으로 감싸서 DB 저장 때문에 화면(UI)이 끊기는 걸 막아줍니다!
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        using (var db = new AppDbContext()) // 다리 연결
+                        {
+                            var newLog = new FlightLog
+                            {
+                                Timestamp = DateTime.Now,
+                                Latitude = state.Latitude,
+                                Longitude = state.Longitude,
+                                Altitude = state.Altitude,
+                                Speed = state.Speed,
+                                BatteryPercent = state.BatteryPercent,
+                                FlightMode = this.FlightMode // 현재 상태 (TAKEOFF, MISSION 등)
+                            };
+
+                            db.FlightLogs.Add(newLog); // 상자에 넣고
+                            db.SaveChanges(); // DB 파일에 도장 쾅! (저장)
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"DB 저장 실패: {ex.Message}");
+                    }
+                });
+            }
+
+            // HUD 계산
             PitchOffset = state.Pitch * 3.55;
             HeadingOffset = -state.Yaw;
 
-            // 4. 배터리 경고
+            // 배터리 경고
             if (state.BatteryPercent > 0 && state.BatteryPercent <= 20 && !ChatLog.Contains("배터리 부족"))
             {
                 ChatLog += $"\n[경고] 기체 배터리 부족: {state.BatteryPercent}%";
             }
 
-            // 6. 착륙 감지
-            // 6. 착륙 및 비행 상태 초기화 (완벽 방어막)
-            if (state.Altitude > 1.0)
-            {
-                _isFlyingHigh = true; // 1m 이상 올라가면 비행 중으로 기록
-            }
+            // 착륙 및 비행 상태 초기화
+            if (state.Altitude > 1.0) _isFlyingHigh = true; // 1m 이상 올라가면 비행 중으로 기록
 
             // 절대 규칙: 시동이 꺼지면(Disarmed) 무조건 모든 비행 기억을 지우고 대기 모드로!
             if (!state.IsArmed)
