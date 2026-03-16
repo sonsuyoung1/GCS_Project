@@ -32,6 +32,9 @@ namespace GCS_Project.ViewModels
         private readonly List<GeoPoint> _waypoints = new List<GeoPoint>();
         private DateTime _lastMapUpdate = DateTime.MinValue;
         private string _userInputCommand = "";
+        //scan 03/16
+        private CancellationTokenSource? _scanCts;
+        private bool _isScanning = false;
 
         private const string MODE_IDLE = "IDLE";
         private const string MODE_TAKEOFF = "TAKEOFF";

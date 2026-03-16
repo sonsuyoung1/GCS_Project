@@ -63,10 +63,16 @@ namespace GCS_Project.ViewModels
                         break;
 
                     case "TAKEOFF":
-                        if (aiCommand.Value > 0)
-                            Drone.TargetAltitude = aiCommand.Value;
-                        ExecuteTakeoff();
-                        break;
+                        {
+                            double altitude = aiCommand.Value > 0 ? aiCommand.Value : 5;
+
+                            Drone.TargetAltitude = altitude;
+
+                            ChatLog += $"\n[명령] 이륙 목표 고도 설정: {Drone.TargetAltitude:F1}m";
+
+                            ExecuteTakeoff();
+                            break;
+                        }
 
                     case "LAND":
                         ExecuteLanding();
@@ -83,8 +89,38 @@ namespace GCS_Project.ViewModels
                             ChatLog += "\n[시스템 오류] 요격할 타겟이 선택되지 않았습니다.";
                         break;
 
+                    case "ASCEND":
+                        if (aiCommand.Value > 0)
+                        {
+                            Drone.TargetAltitude = aiCommand.Value;
+                            await _mavlinkService.ChangeTargetAltitude((float)Drone.TargetAltitude);
+                            ChatLog += $"\n[명령] 목표 고도를 {Drone.TargetAltitude:F1}m로 상승시킵니다.";
+                        }
+                        break;
+
+                    case "DESCEND":
+                        if (aiCommand.Value > 0)
+                        {
+                            Drone.TargetAltitude = aiCommand.Value;
+
+                            if (Drone.TargetAltitude < 1)
+                                Drone.TargetAltitude = 1;
+
+                            await _mavlinkService.ChangeTargetAltitude((float)Drone.TargetAltitude);
+                            ChatLog += $"\n[명령] 목표 고도를 {Drone.TargetAltitude:F1}m로 하강시킵니다.";
+                        }
+                        break;
+
+                    case "SCAN":
+                        await ExecuteScan(aiCommand.Value);
+                        break;
+                    case "STOP_SCAN":
+                        ExecuteStopScan();
+                        break;
+
                     case "NONE":
                     default:
+                        ChatLog += "\n[AI] 실행 가능한 명령이 아닙니다.";
                         break;
                 }
             }
@@ -115,25 +151,38 @@ namespace GCS_Project.ViewModels
                         model = "gpt-4.1-mini",
                         input = $"사용자 명령: {input}",
                         instructions =
-                            @"너는 자율 드론 GCS 명령 해석 AI다.
-                            사용자의 자연어 명령을 해석해서 아래 Action 중 하나로 분류한다.
+@"너는 자율 드론 GCS 명령 해석 AI다.
+사용자의 자연어 명령을 분석해서 반드시 하나의 JSON 객체로만 판단해라.
 
-                            Action은 반드시 다음 중 하나만 사용:
-                            ARM, DISARM, TAKEOFF, LAND, RTL, STRIKE, NONE
+Action은 반드시 다음 중 하나만 사용:
+ARM, DISARM, TAKEOFF, LAND, RTL, STRIKE, ASCEND, DESCEND, SCAN, STOP_SCAN, NONE
 
-                            규칙:
-                            - 모터 시동 / arm / 비행 준비 → ARM
-                            - 시동 해제 / 모터 끄기 → DISARM
-                            - 이륙 명령 → TAKEOFF
-                            - 착륙 명령 → LAND
-                            - 복귀 명령 → RTL
-                            - 선택된 타겟 추적 / 요격 → STRIKE
-                            - 의미가 불명확하거나 실행 불가능 → NONE
+판단 규칙:
+- 시동 걸기, arm, 모터 켜기, 비행 준비 = ARM
+- 시동 끄기, disarm, 모터 끄기 = DISARM
+- 이륙 = TAKEOFF
+- 착륙 = LAND
+- 복귀, 귀환 = RTL
+- 선택된 타겟 추적, 요격, 따라가기 = STRIKE
+- 고도를 올려라, 상승해라 = ASCEND
+- 고도를 낮춰라, 하강해라 = DESCEND
+- 주변 탐지, 객체 탐지, 회전 탐색, 빙글빙글 돌며 탐색 = SCAN
+- 탐색 멈춰, 회전 멈춰, 탐지 중단, 스캔 중지 = STOP_SCAN
+- 의미가 모호하거나 실행 불가하면 = NONE
 
-                            추가 규칙:
-                            - Message는 짧은 한국어 보고 문장
-                            - Value는 숫자 (필요 없으면 0)
-                            ",
+Value 규칙:
+- TAKEOFF의 Value는 목표 이륙 고도(m)
+- TAKEOFF의 Value가 0이면 기본 이륙 고도는 5m로 설정한다.
+- ASCEND의 Value는 목표 고도(m)
+- DESCEND의 Value도 목표 고도(m)
+- DESCEND의 Value는 추가 하강량(m)
+- SCAN의 Value는 회전 시간(초), 없으면 10
+- STOP_SCAN의 Value는 0
+- ARM, DISARM, LAND, RTL, STRIKE, NONE의 Value는 0
+- 숫자가 명시되지 않으면 기본값 0
+
+Message는 짧은 한국어 보고 문장으로 작성해라.
+부가 설명, 코드블록, 마크다운은 출력하지 마라.",
 
                     text = new
                         {
@@ -150,7 +199,7 @@ namespace GCS_Project.ViewModels
                                         Action = new
                                         {
                                             type = "string",
-                                            @enum = new[] { "Arm", "DISARM", "TAKEOFF", "LAND", "RTL", "STRIKE", "NONE" }
+                                            @enum = new[] { "ARM", "DISARM", "TAKEOFF", "LAND", "RTL", "STRIKE", "ASCEND", "DESCEND", "SCAN", "STOP_SCAN", "NONE" }
                                         },
                                         Value = new
                                         {
