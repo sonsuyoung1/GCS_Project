@@ -237,6 +237,12 @@ namespace GCS_Project.ViewModels
                     return;
                 }
 
+                if (!Drone.IsArmed)
+                {
+                    ChatLog += "\n[시스템] 시동 후에만 탐색할 수 있습니다.";
+                    return;
+                }
+
                 if (seconds <= 0)
                     seconds = 10;
 
@@ -247,11 +253,7 @@ namespace GCS_Project.ViewModels
                 _isScanning = true;
                 ChatLog += $"\n[시스템] {seconds:F0}초 동안 회전 탐색을 시작합니다.";
 
-                // 미션 중이면 정지
-                await _mavlinkService.StopMission();
-
-                // 수동 조종 모드로 전환
-                ToggleManualControl(true);
+                _mavlinkService.StartManualControl();
 
                 int totalMs = (int)(seconds * 1000);
                 int stepMs = 100;
@@ -259,16 +261,13 @@ namespace GCS_Project.ViewModels
 
                 while (elapsed < totalMs && !token.IsCancellationRequested)
                 {
-                    // pitch=0, roll=0, thrust=500(호버), yaw=250 정도로 천천히 회전
                     _mavlinkService.SetJoystick(0, 0, 500, 250);
                     await Task.Delay(stepMs, token);
                     elapsed += stepMs;
                 }
 
-                // 정지
                 _mavlinkService.SetJoystick(0, 0, 500, 0);
-                // 수동조종 종료
-                ToggleManualControl(false);
+                _mavlinkService.StopManualControl();
 
                 if (!token.IsCancellationRequested)
                 {
@@ -286,6 +285,7 @@ namespace GCS_Project.ViewModels
             finally
             {
                 _mavlinkService.SetJoystick(0, 0, 500, 0);
+                _mavlinkService.StopManualControl();
                 _isScanning = false;
             }
         }
@@ -302,7 +302,9 @@ namespace GCS_Project.ViewModels
 
                 _scanCts?.Cancel();
                 _mavlinkService.SetJoystick(0, 0, 500, 0);
-                ToggleManualControl(false);
+
+                // 절대 호출 금지
+                // ToggleManualControl(false);
 
                 _isScanning = false;
                 ChatLog += "\n[시스템] 탐색을 중지합니다.";
