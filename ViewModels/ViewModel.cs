@@ -49,6 +49,9 @@ namespace GCS_Project.ViewModels
         private readonly object _targetLock = new();
         private List<DetectedTarget> _latestTargets = new();
         private System.Windows.Threading.DispatcherTimer? _targetUiTimer;
+        private readonly object _droneStateLock = new();
+        private DroneState? _latestDroneState;
+        private System.Windows.Threading.DispatcherTimer? _droneUiTimer;
         #endregion
 
 
@@ -275,6 +278,7 @@ namespace GCS_Project.ViewModels
             _mavlinkService?.StopAsync();
             _yoloMetaUdpService?.StopAsync();
             _targetUiTimer?.Stop();
+            _droneUiTimer?.Stop();
         }
     }
 }

@@ -88,7 +88,7 @@ namespace GCS_Project.xServices
                 .AddTo(_subs);
 
             // 3) 위치 정보
-            drone.GetMicroservice<IPositionClient>()?.GlobalPosition
+/*            drone.GetMicroservice<IPositionClient>()?.GlobalPosition
                 .Subscribe(gp =>
                 {
                     if (gp == null) return;
@@ -96,6 +96,21 @@ namespace GCS_Project.xServices
                     CurrentState.Latitude = gp.Lat / 1e7;
                     CurrentState.Longitude = gp.Lon / 1e7;
                     CurrentState.Altitude = gp.Alt / 1000.0;
+                })
+                .AddTo(_subs);*/
+            //디버깅용
+            drone.GetMicroservice<IPositionClient>()?.GlobalPosition
+                .Subscribe(gp =>
+                {
+                    if (gp == null) return;
+
+                    CurrentState.DebugRxUtc = DateTime.UtcNow;
+                    CurrentState.Latitude = gp.Lat / 1e7;
+                    CurrentState.Longitude = gp.Lon / 1e7;
+                    CurrentState.Altitude = gp.Alt / 1000.0;
+
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[GP] lat={gp.Lat}, lon={gp.Lon}, alt={gp.Alt}");
                 })
                 .AddTo(_subs);
 
@@ -124,6 +139,7 @@ namespace GCS_Project.xServices
                 .OfType<IProtocolMessage, AttitudePacket>()
                 .Subscribe(packet =>
                 {
+                    CurrentState.DebugRxUtc = DateTime.UtcNow; // 디버깅용
                     CurrentState.Roll = packet.Payload.Roll * (180.0 / Math.PI);
                     CurrentState.Pitch = packet.Payload.Pitch * (180.0 / Math.PI);
                     CurrentState.Yaw = (packet.Payload.Yaw * (180.0 / Math.PI) + 360) % 360;
@@ -131,13 +147,21 @@ namespace GCS_Project.xServices
                 .AddTo(_subs);
 
             // 7) UI 갱신 타이머
-            _uiUpdateTimer = Observable
+            /*_uiUpdateTimer = Observable
                 .Interval(TimeSpan.FromMilliseconds(100))
                 .Subscribe(_ =>
                 {
-                    OnDataUpdated?.Invoke(CurrentState.Clone());
+                    PublishState();
                 })
-                .AddTo(_subs);
+                .AddTo(_subs);*/
+            //디버깅용
+            _uiUpdateTimer = Observable
+                 .Interval(TimeSpan.FromMilliseconds(100))
+                 .Subscribe(_ =>
+                 {
+                     PublishState();
+                 })
+                 .AddTo(_subs);
         }
 
         private void HookCommandAck(IClientDevice drone)
