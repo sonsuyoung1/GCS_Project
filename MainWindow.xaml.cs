@@ -33,6 +33,12 @@ namespace GCS_Project
         private System.Windows.Threading.DispatcherTimer? _overlayTimer;
 
         private int? _selectedTargetId = null;
+
+        private double _latestMapLat;
+        private double _latestMapLng;
+        private double _latestMapHeading;
+        private bool _mapDirty = false;
+        private System.Windows.Threading.DispatcherTimer? _mapTimer;
         #endregion
 
 
@@ -76,6 +82,25 @@ namespace GCS_Project
             this.SizeChanged += MainWindow_WindowChanged;
             this.StateChanged += MainWindow_WindowChanged;
             this.Closing += MainWindow_Closing;
+
+            _mapTimer = new System.Windows.Threading.DispatcherTimer();
+            _mapTimer.Interval = TimeSpan.FromMilliseconds(200);
+            _mapTimer.Tick += async (s, e) =>
+            {
+                if (!_mapDirty || _mapController == null) return;
+
+                _mapDirty = false;
+                await _mapController.UpdateDroneLocation(_latestMapLat, _latestMapLng, _latestMapHeading);
+            };
+            _mapTimer.Start();
+
+            _viewModel.PositionUpdated += (lat, lng, heading) =>
+            {
+                _latestMapLat = lat;
+                _latestMapLng = lng;
+                _latestMapHeading = heading;
+                _mapDirty = true;
+            };
         }
         #endregion
 
@@ -438,7 +463,7 @@ namespace GCS_Project
         {
             try
             {
-                _overlayTimer?.Stop();
+                //_overlayTimer?.Stop();
                 _overlayTimer = null;
 
                 _overlayWindow?.Close();
