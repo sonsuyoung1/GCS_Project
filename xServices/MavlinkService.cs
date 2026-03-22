@@ -38,6 +38,21 @@ namespace GCS_Project.xServices
         private IDeviceExplorer? _explorer;
         private IClientDevice? _drone;
         private readonly object _waypointsLock = new();
+
+        // 03/22
+        private DateTime _lastUiUpdate = DateTime.MinValue;
+        private void PublishState()
+        {
+            if ((DateTime.UtcNow - _lastUiUpdate).TotalMilliseconds < 100)
+                return;
+
+            _lastUiUpdate = DateTime.UtcNow;
+
+            var snapshot = CurrentState.Clone();
+            snapshot.DebugPublishUtc = DateTime.UtcNow;
+
+            OnDataUpdated?.Invoke(snapshot);
+        }
         #endregion
 
         #region [2. 데이터 속성 및 상태 (State & Data)]
@@ -187,7 +202,7 @@ namespace GCS_Project.xServices
             _cts = null;
 
             CurrentState.IsConnected = false;
-            OnDataUpdated?.Invoke(CurrentState.Clone());
+            PublishState();
             OnLogReceived?.Invoke("[MAV] 연결 종료됨");
         }
 

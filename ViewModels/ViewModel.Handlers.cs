@@ -59,7 +59,10 @@ namespace GCS_Project.ViewModels
             // ===== 1. 이벤트 구독 먼저 =====
             _mavlinkService.OnDataUpdated += (state) =>
             {
-                Application.Current.Dispatcher.BeginInvoke(() => HandleDroneData(state));
+                lock (_droneStateLock)
+                {
+                    _latestDroneState = state;
+                }
             };
 
             _mavlinkService.OnWaypointCountChanged += (count) =>
@@ -136,6 +139,27 @@ namespace GCS_Project.ViewModels
             };
             _targetUiTimer.Start();
 
+            _droneUiTimer = new System.Windows.Threading.DispatcherTimer();
+            _droneUiTimer.Interval = TimeSpan.FromMilliseconds(100);
+            _droneUiTimer.Tick += (s, e) =>
+            {
+                DroneState? snapshot = null;
+
+                lock (_droneStateLock)
+                {
+                    if (_latestDroneState != null)
+                    {
+                        snapshot = _latestDroneState;
+                        _latestDroneState = null;
+                    }
+                }
+
+                if (snapshot != null)
+                {
+                    HandleDroneData(snapshot);
+                }
+            };
+            _droneUiTimer.Start();
             // 타겟 업데이트
             /*_mavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
             {
@@ -162,6 +186,8 @@ namespace GCS_Project.ViewModels
 
         private void HandleDroneData(DroneState state)
         {
+            state.DebugHandleUtc = DateTime.UtcNow; //디버깅용
+
             if (!state.IsConnected)
             {
                 RefreshCommandStatesIfNeeded();
@@ -192,10 +218,32 @@ namespace GCS_Project.ViewModels
             _uiDrone.TargetAltitude = state.TargetAltitude;
             _uiDrone.TargetSpeed = state.TargetSpeed;
 
-            if ((DateTime.UtcNow - _lastMapUpdate).TotalMilliseconds > 200)
+            /*if ((DateTime.UtcNow - _lastMapUpdate).TotalMilliseconds > 500)
             {
                 _lastMapUpdate = DateTime.UtcNow;
                 PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
+
+                if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue && !_isTakeoffMarkerDrawn)
+                {
+                    TakeoffPointSet?.Invoke(state.TakeoffLat.Value, state.TakeoffLng.Value);
+                    _isTakeoffMarkerDrawn = true;
+                }
+            }*/
+            // 디버깅용
+            if ((DateTime.UtcNow - _lastMapUpdate).TotalMilliseconds > 500)
+            {
+                _lastMapUpdate = DateTime.UtcNow;
+                state.DebugMapUtc = DateTime.UtcNow;
+
+                PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
+
+                var rxToPublish = (state.DebugPublishUtc - state.DebugRxUtc).TotalMilliseconds;
+                var publishToHandle = (state.DebugHandleUtc - state.DebugPublishUtc).TotalMilliseconds;
+                var handleToMap = (state.DebugMapUtc - state.DebugHandleUtc).TotalMilliseconds;
+                var total = (state.DebugMapUtc - state.DebugRxUtc).TotalMilliseconds;
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"[TEL-LAG] rx→pub={rxToPublish:F0}ms, pub→handle={publishToHandle:F0}ms, handle→map={handleToMap:F0}ms, total={total:F0}ms");
 
                 if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue && !_isTakeoffMarkerDrawn)
                 {
@@ -206,6 +254,10 @@ namespace GCS_Project.ViewModels
 
             PitchOffset = state.Pitch * 3.55;
             HeadingOffset = -state.Yaw;
+
+            //아래 두줄은 디버깅용
+            System.Diagnostics.Debug.WriteLine(
+                $"[HUD] alt={state.Altitude:F1}, yaw={state.Yaw:F1}, connected={state.IsConnected}, armed={state.IsArmed}");
 
             if (state.BatteryPercent > 0 && state.BatteryPercent <= 20 && !ChatLog.Contains("배터리 부족"))
             {
