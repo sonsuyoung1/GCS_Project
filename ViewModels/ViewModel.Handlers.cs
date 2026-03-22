@@ -12,6 +12,45 @@ namespace GCS_Project.ViewModels
     public partial class ViewModel
     {
         #region [이벤트 핸들러 (Event Handlers)]
+        //현재 버튼 상태 캡처 메서드 추가 03/22
+        private CommandStateSnapshot CaptureCommandState()
+        {
+            return new CommandStateSnapshot(
+                FlightMode,
+                Drone.IsConnected,
+                Drone.IsArmed,
+                _currentWaypointCount,
+                SelectedTarget != null
+            );
+        }
+        //필요할 때만 버튼 갱신하는 메서드 추가
+        private void RefreshCommandStatesIfNeeded()
+        {
+            var current = CaptureCommandState();
+
+            if (_lastCommandStateSnapshot == null || !_lastCommandStateSnapshot.Equals(current))
+            {
+                _lastCommandStateSnapshot = current;
+                NotifyCommandStates();
+            }
+        }
+
+        //ChatLog += 직접 붙이는 거 정리 -> 딜레이 막기 위함 03/22
+        private void AppendLog(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return;
+
+            ChatLog += $"\n{message}";
+
+            // 로그가 너무 길어지면 뒤쪽만 남김
+            const int maxLen = 5000;
+            const int keepLen = 3000;
+
+            if (ChatLog.Length > maxLen)
+            {
+                ChatLog = ChatLog.Substring(ChatLog.Length - keepLen);
+            }
+        }
         private async void InitializeService()
         {
             if (_mavStarting) return;
@@ -25,11 +64,11 @@ namespace GCS_Project.ViewModels
 
             _mavlinkService.OnWaypointCountChanged += (count) =>
             {
-                Application.Current.Dispatcher.Invoke(() =>
+                Application.Current.Dispatcher.BeginInvoke(() =>
                 {
                     _currentWaypointCount = count;
-                    NotifyCommandStates();
-                    ChatLog += $"\n[시스템] 웨이포인트 개수 동기화 됨: {count}개";
+                    RefreshCommandStatesIfNeeded();
+                    AppendLog($"[시스템] 웨이포인트 개수 동기화 됨: {count}개");
                 });
             };
 
@@ -38,7 +77,7 @@ namespace GCS_Project.ViewModels
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
                     FlightMode = MODE_TAKEOFF;
-                    ChatLog += "\n모든 목적지에 도착하여 미션을 종료합니다.";
+                    AppendLog("모든 목적지에 도착하여 미션을 종료합니다.");
                 });
             };
 
@@ -46,7 +85,7 @@ namespace GCS_Project.ViewModels
             {
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
-                    ChatLog += $"\n{message}";
+                    AppendLog(message);
                 });
             };
 
@@ -54,35 +93,48 @@ namespace GCS_Project.ViewModels
             {
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
-                    ChatLog += $"\n{message}";
+                    AppendLog(message);
                 });
             };
 
             _yoloMetaUdpService.OnTargetsReceived += (targets) =>
             {
-                Application.Current.Dispatcher.BeginInvoke(() =>
+                lock (_targetLock)
                 {
-                    ApplyDetectedTargets(targets);
-                });
+                    _latestTargets = targets;
+                }
             };
 
             try
             {
                 await _mavlinkService.StartAsync();
-                ChatLog += "\n[시스템] MAVLink 연결 성공";
+                AppendLog("[시스템] MAVLink 연결 성공");
 
                 await _yoloMetaUdpService.StartAsync();
-                ChatLog += "\n[시스템] YOLO UDP 메타 수신 시작";
+                AppendLog("[시스템] YOLO UDP 메타 수신 시작");
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 서비스 시작 실패: {ex.Message}";
+                AppendLog($"[오류] 서비스 시작 실패: {ex.Message}");
             }
             finally
             {
                 _mavStarting = false;
             }
+            //yolo 최적화 03/22
+            _targetUiTimer = new System.Windows.Threading.DispatcherTimer();
+            _targetUiTimer.Interval = TimeSpan.FromMilliseconds(100);
+            _targetUiTimer.Tick += (s, e) =>
+            {
+                List<DetectedTarget> snapshot;
+                lock (_targetLock)
+                {
+                    snapshot = _latestTargets.ToList();
+                }
 
+                ApplyDetectedTargets(snapshot);
+            };
+            _targetUiTimer.Start();
 
             // 타겟 업데이트
             /*_mavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
@@ -140,7 +192,7 @@ namespace GCS_Project.ViewModels
             // 4. 배터리 경고
             if (state.BatteryPercent > 0 && state.BatteryPercent <= 20 && !ChatLog.Contains("배터리 부족"))
             {
-                ChatLog += $"\n[경고] 기체 배터리 부족: {state.BatteryPercent}%";
+                AppendLog($"[경고] 기체 배터리 부족: {state.BatteryPercent}%");
             }
 
             // 6. 착륙 감지
@@ -158,7 +210,7 @@ namespace GCS_Project.ViewModels
                 if (FlightMode != MODE_IDLE)
                 {
                     FlightMode = MODE_IDLE; // UI도 IDLE로 안전하게 복귀
-                    ChatLog += "\n[시스템] 시동 꺼짐 확인. 대기(IDLE) 상태로 전환합니다.";
+                    AppendLog("[시스템] 시동 꺼짐 확인. 대기(IDLE) 상태로 전환합니다.");
                 }
             }
             // 시동이 켜져있고 TAKEOFF 모드인데 비정상적으로 땅에 곤두박질친 경우의 예외 처리
@@ -166,34 +218,65 @@ namespace GCS_Project.ViewModels
             {
                 FlightMode = MODE_IDLE;
                 _isFlyingHigh = false;
-                ChatLog += "\n[시스템] 고도 저하 감지. 대기 상태로 전환합니다.";
+                AppendLog("[시스템] 고도 저하 감지. 대기 상태로 전환합니다.");
             }
+
+            RefreshCommandStatesIfNeeded(); //03/22
         }
 
         private void ApplyDetectedTargets(List<DetectedTarget> targets)
         {
-            _detectedTargets.Clear();
+            var incomingById = targets.ToDictionary(t => t.ID);
 
-            foreach (var target in targets)
+            // 1) 기존 타겟 업데이트 + 새 타겟 추가
+            foreach (var incoming in targets)
             {
-                _detectedTargets.Add(target);
+                var existing = _detectedTargets.FirstOrDefault(t => t.ID == incoming.ID);
+
+                if (existing != null)
+                {
+                    existing.TargetType = incoming.TargetType;
+                    existing.Lat = incoming.Lat;
+                    existing.Lng = incoming.Lng;
+                    existing.Bx = incoming.Bx;
+                    existing.By = incoming.By;
+                    existing.Bw = incoming.Bw;
+                    existing.Bh = incoming.Bh;
+                }
+                else
+                {
+                    _detectedTargets.Add(incoming);
+                }
             }
+
+            // 2) 이번 프레임에 없는 타겟 제거
+            for (int i = _detectedTargets.Count - 1; i >= 0; i--)
+            {
+                var existing = _detectedTargets[i];
+
+                if (!incomingById.ContainsKey(existing.ID))
+                {
+                    if (SelectedTarget?.ID == existing.ID)
+                    {
+                        SelectedTarget = null;
+                    }
+
+                    _detectedTargets.RemoveAt(i);
+                }
+            }
+
+            // 3) 선택된 타겟 다시 연결
             if (SelectedTarget != null)
             {
-                DetectedTarget? matched = null;
-
-                foreach (var t in _detectedTargets)
-                {
-                    if (t.ID == SelectedTarget.ID)
-                    {
-                        matched = t;
-                        break;
-                    }
-                }
+                var matched = _detectedTargets.FirstOrDefault(t => t.ID == SelectedTarget.ID);
 
                 if (matched != null)
                 {
-                    SelectedTarget = matched;
+                    if (!ReferenceEquals(SelectedTarget, matched))
+                    {
+                        SelectedTarget = matched;
+                    }
+
                     matched.IsBeingTracked = true;
                 }
                 else
@@ -219,7 +302,7 @@ namespace GCS_Project.ViewModels
                 _mavlinkService.SetJoystick(0, 0, 500, 0);
 
                 FlightMode = "MANUAL";
-                ChatLog += "\n[시스템] 수동 조종 모드 진입";
+                AppendLog("[시스템] 수동 조종 모드 진입");
             }
             else
             {
@@ -234,7 +317,7 @@ namespace GCS_Project.ViewModels
 
                 // 4. 상태 표시
                 FlightMode = "HOLD";
-                ChatLog += "\n[시스템] 수동 조종 모드 종료 - 제자리 유지";
+                AppendLog("[시스템] 수동 조종 모드 종료 - 제자리 유지");
             }
         }
 

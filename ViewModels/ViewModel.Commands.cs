@@ -23,11 +23,11 @@ namespace GCS_Project.ViewModels
                 // void 메서드이므로 Task.Run으로 감싸 UI 스레드 멈춤 완벽 방지!
                 await Task.Run(() => _mavlinkService.StartMission());
                 FlightMode = MODE_MISSION;
-                ChatLog += "\n미션을 시작합니다.";
+                AppendLog("미션을 시작합니다.");
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 미션 시작 실패: {ex.Message}";
+                AppendLog($"[오류] 미션 시작 실패: {ex.Message}");
             }
         }
 
@@ -38,11 +38,11 @@ namespace GCS_Project.ViewModels
             {
                 await Task.Run(() => _mavlinkService.StopMission());
                 FlightMode = MODE_TAKEOFF;
-                ChatLog += "\n미션을 중단했습니다.";
+                AppendLog("미션을 중단했습니다.");
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 미션 중단 실패: {ex.Message}";
+                AppendLog($"[오류] 미션 중단 실패: {ex.Message}");
             }
         }
 
@@ -53,12 +53,12 @@ namespace GCS_Project.ViewModels
             {
                 await _mavlinkService.SendArmAsync();
                 // 드론이 실제로 시동이 걸리면 상태가 업데이트되겠지만, 일단 명령 전송 로그를 띄웁니다.
-                ChatLog += "\n[명령] 시동(Arm) 명령 전송 완료";
+                AppendLog("[명령] 시동(Arm) 명령 전송 완료");
 
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 시동 명령 실패: {ex.Message}";
+                AppendLog($"[오류] 시동 명령 실패: {ex.Message}");
             }
         }
 
@@ -68,13 +68,13 @@ namespace GCS_Project.ViewModels
             try
             {
                 await _mavlinkService.SendDisarmAsync();
-                ChatLog += "\n[명령] 시동 끄기(Disarm) 명령 전송 완료";
+                AppendLog("[명령] 시동 끄기(Disarm) 명령 전송 완료");
 
                 // (DisarmCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 시동 끄기 명령 실패: {ex.Message}";
+                AppendLog($"[오류] 시동 끄기 명령 실패: {ex.Message}");
             }
         }
 
@@ -85,7 +85,7 @@ namespace GCS_Project.ViewModels
             {
                 await _mavlinkService.Takeoff((float)Drone.TargetAltitude);
                 FlightMode = MODE_TAKEOFF;
-                ChatLog += $"\n[명령] 이륙 명령 전송 (목표 고도: {Drone.TargetAltitude}m)";
+                AppendLog($"[명령] 이륙 명령 전송 (목표 고도: {Drone.TargetAltitude}m)");
 
                 if (Drone.Latitude != 0 && Drone.Longitude != 0)
                 {
@@ -94,7 +94,7 @@ namespace GCS_Project.ViewModels
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 이륙 명령 실패: {ex.Message}";
+                AppendLog($"[오류] 이륙 명령 실패: {ex.Message}");
             }
         }
 
@@ -109,11 +109,11 @@ namespace GCS_Project.ViewModels
                 await Task.Run(() => _mavlinkService.ClearWaypoints());
                 AllClearRequested?.Invoke();
 
-                ChatLog += "\n[명령] 착륙 명령 전송 및 목적지 초기화";
+                AppendLog("[명령] 착륙 명령 전송 및 목적지 초기화");
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 착륙 명령 실패: {ex.Message}";
+                AppendLog($"[오류] 착륙 명령 실패: {ex.Message}");
             }
         }
 
@@ -123,14 +123,14 @@ namespace GCS_Project.ViewModels
             try
             {
                 await _mavlinkService.Rtl();
-                ChatLog += "\n[명령] 복귀(RTL) 명령 전송.";
+                AppendLog("[명령] 복귀(RTL) 명령 전송.");
 
                 await Task.Run(() => _mavlinkService.ClearWaypoints());
                 AllClearRequested?.Invoke();
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 복귀 명령 실패: {ex.Message}";
+                AppendLog($"[오류] 복귀 명령 실패: {ex.Message}");
             }
         }
 
@@ -144,7 +144,7 @@ namespace GCS_Project.ViewModels
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 목적지 취소 실패: {ex.Message}";
+                AppendLog($"[오류] 목적지 취소 실패: {ex.Message}");
             }
         }
 
@@ -158,7 +158,7 @@ namespace GCS_Project.ViewModels
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 목적지 삭제 실패: {ex.Message}";
+                AppendLog($"[오류] 목적지 삭제 실패: {ex.Message}");
             }
         }
 
@@ -169,11 +169,11 @@ namespace GCS_Project.ViewModels
             {
                 await Task.Run(() => _mavlinkService.AddWaypoint(lat, lng));
 
-                ChatLog += $"\n[지도] 목적지 추가: {lat:F5}, {lng:F5}";
+                AppendLog($"[지도] 목적지 추가: {lat:F5}, {lng:F5}");
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 목적지 추가 실패: {ex.Message}";
+                AppendLog($"[오류] 목적지 추가 실패: {ex.Message}");
             }
         }
 
@@ -182,17 +182,18 @@ namespace GCS_Project.ViewModels
         {
             try
             {
-                if (SelectedTarget == null) return;
+                var target = SelectedTarget;
+                if (target == null) return;
 
                 await Task.Run(() => _mavlinkService.StopMission());
-                await _mavlinkService.GoTo(SelectedTarget.Lat, SelectedTarget.Lng, (float)Drone.TargetAltitude);
+                await _mavlinkService.GoTo(target.Lat, target.Lng, (float)Drone.TargetAltitude);
 
                 FlightMode = MODE_TRACKING;
-                ChatLog += $"\n[시스템] 타겟 추적 모드: ID {SelectedTarget.ID}";
+                AppendLog($"[시스템] 타겟 추적 모드: ID {target.ID}");
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 타겟 추적 실패: {ex.Message}";
+                AppendLog($"[오류] 타겟 추적 실패: {ex.Message}");
             }
         }
 
@@ -205,11 +206,11 @@ namespace GCS_Project.ViewModels
                 await _mavlinkService.StopTracking();
 
                 FlightMode = "LOITER";
-                ChatLog += "\n[시스템] 추적 자율 주행 중단.";
+                AppendLog("[시스템] 추적 자율 주행 중단.");
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 추적 중단 실패: {ex.Message}";
+                AppendLog($"[오류] 추적 중단 실패: {ex.Message}");
             }
         }*/
 
@@ -233,13 +234,13 @@ namespace GCS_Project.ViewModels
             {
                 if (_isScanning)
                 {
-                    ChatLog += "\n[시스템] 이미 탐색 중입니다.";
+                    AppendLog("[시스템] 이미 탐색 중입니다.");
                     return;
                 }
 
                 if (!Drone.IsArmed)
                 {
-                    ChatLog += "\n[시스템] 시동 후에만 탐색할 수 있습니다.";
+                    AppendLog("[시스템] 시동 후에만 탐색할 수 있습니다.");
                     return;
                 }
 
@@ -251,7 +252,7 @@ namespace GCS_Project.ViewModels
                 var token = _scanCts.Token;
 
                 _isScanning = true;
-                ChatLog += $"\n[시스템] {seconds:F0}초 동안 회전 탐색을 시작합니다.";
+                AppendLog($"[시스템] {seconds:F0}초 동안 회전 탐색을 시작합니다.");
 
                 _mavlinkService.StartManualControl();
 
@@ -271,16 +272,16 @@ namespace GCS_Project.ViewModels
 
                 if (!token.IsCancellationRequested)
                 {
-                    ChatLog += "\n[시스템] 회전 탐색을 종료합니다.";
+                    AppendLog("[시스템] 회전 탐색을 종료합니다.");
                 }
             }
             catch (TaskCanceledException)
             {
-                ChatLog += "\n[시스템] 회전 탐색이 중단되었습니다.";
+                AppendLog("[시스템] 회전 탐색이 중단되었습니다.");
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 회전 탐색 실패: {ex.Message}";
+                AppendLog($"[오류] 회전 탐색 실패: {ex.Message}");
             }
             finally
             {
@@ -296,7 +297,7 @@ namespace GCS_Project.ViewModels
             {
                 if (!_isScanning)
                 {
-                    ChatLog += "\n[시스템] 현재 탐색 중이 아닙니다.";
+                    AppendLog("[시스템] 현재 탐색 중이 아닙니다.");
                     return;
                 }
 
@@ -307,11 +308,11 @@ namespace GCS_Project.ViewModels
                 // ToggleManualControl(false);
 
                 _isScanning = false;
-                ChatLog += "\n[시스템] 탐색을 중지합니다.";
+                AppendLog("[시스템] 탐색을 중지합니다.");
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[오류] 탐색 중지 실패: {ex.Message}";
+                AppendLog($"[오류] 탐색 중지 실패: {ex.Message}");
             }
         }
         #endregion
