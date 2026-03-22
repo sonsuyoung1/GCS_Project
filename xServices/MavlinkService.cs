@@ -187,7 +187,7 @@ namespace GCS_Project.xServices
             _cts = null;
 
             CurrentState.IsConnected = false;
-            OnDataUpdated?.Invoke(CurrentState);
+            OnDataUpdated?.Invoke(CurrentState.Clone());
             OnLogReceived?.Invoke("[MAV] 연결 종료됨");
         }
 

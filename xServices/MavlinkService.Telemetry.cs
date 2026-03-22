@@ -135,7 +135,7 @@ namespace GCS_Project.xServices
                 .Interval(TimeSpan.FromMilliseconds(100))
                 .Subscribe(_ =>
                 {
-                    OnDataUpdated?.Invoke(CurrentState);
+                    OnDataUpdated?.Invoke(CurrentState.Clone());
                 })
                 .AddTo(_subs);
         }

@@ -162,58 +162,71 @@ namespace GCS_Project.ViewModels
 
         private void HandleDroneData(DroneState state)
         {
-            if (!Drone.IsConnected)
+            if (!state.IsConnected)
             {
-                Drone.IsConnected = true;
+                RefreshCommandStatesIfNeeded();
+                return;
             }
 
-            if (state.Latitude == 0 && state.Longitude == 0) return;
+            if (state.Latitude == 0 && state.Longitude == 0)
+            {
+                RefreshCommandStatesIfNeeded();
+                return;
+            }
 
-            // 2. 기존 위치 업데이트 로직
+            _uiDrone.Latitude = state.Latitude;
+            _uiDrone.Longitude = state.Longitude;
+            _uiDrone.Altitude = state.Altitude;
+            _uiDrone.Speed = state.Speed;
+            _uiDrone.IsConnected = state.IsConnected;
+            _uiDrone.TakeoffLat = state.TakeoffLat;
+            _uiDrone.TakeoffLng = state.TakeoffLng;
+            _uiDrone.BatteryPercent = state.BatteryPercent;
+            _uiDrone.IsArmed = state.IsArmed;
+            _uiDrone.IsTargetDetected = state.IsTargetDetected;
+            _uiDrone.TargetLat = state.TargetLat;
+            _uiDrone.TargetLng = state.TargetLng;
+            _uiDrone.Roll = state.Roll;
+            _uiDrone.Pitch = state.Pitch;
+            _uiDrone.Yaw = state.Yaw;
+            _uiDrone.TargetAltitude = state.TargetAltitude;
+            _uiDrone.TargetSpeed = state.TargetSpeed;
+
             if ((DateTime.UtcNow - _lastMapUpdate).TotalMilliseconds > 200)
             {
                 _lastMapUpdate = DateTime.UtcNow;
-
-                // 1. 드론 현재 위치 업데이트
                 PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
 
-                // 2. 이륙 마커 업데이트 (스위치를 확인해서 '딱 한 번만' 그립니다!)
                 if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue && !_isTakeoffMarkerDrawn)
                 {
                     TakeoffPointSet?.Invoke(state.TakeoffLat.Value, state.TakeoffLng.Value);
-                    _isTakeoffMarkerDrawn = true; // "나 그렸어! 이제 다시 부르지 마!"
+                    _isTakeoffMarkerDrawn = true;
                 }
             }
 
-            // 3. HUD 계산
             PitchOffset = state.Pitch * 3.55;
             HeadingOffset = -state.Yaw;
 
-            // 4. 배터리 경고
             if (state.BatteryPercent > 0 && state.BatteryPercent <= 20 && !ChatLog.Contains("배터리 부족"))
             {
                 AppendLog($"[경고] 기체 배터리 부족: {state.BatteryPercent}%");
             }
 
-            // 6. 착륙 감지
-            // 6. 착륙 및 비행 상태 초기화 (완벽 방어막)
             if (state.Altitude > 1.0)
             {
-                _isFlyingHigh = true; // 1m 이상 올라가면 비행 중으로 기록
+                _isFlyingHigh = true;
             }
 
-            // 절대 규칙: 시동이 꺼지면(Disarmed) 무조건 모든 비행 기억을 지우고 대기 모드로!
             if (!state.IsArmed)
             {
-                _isFlyingHigh = false; // 전생의 기억(비행 기록) 완벽 삭제!
+                _isFlyingHigh = false;
 
                 if (FlightMode != MODE_IDLE)
                 {
-                    FlightMode = MODE_IDLE; // UI도 IDLE로 안전하게 복귀
+                    FlightMode = MODE_IDLE;
                     AppendLog("[시스템] 시동 꺼짐 확인. 대기(IDLE) 상태로 전환합니다.");
                 }
             }
-            // 시동이 켜져있고 TAKEOFF 모드인데 비정상적으로 땅에 곤두박질친 경우의 예외 처리
             else if (_isFlyingHigh && FlightMode == MODE_TAKEOFF && state.Altitude <= 0.5)
             {
                 FlightMode = MODE_IDLE;
@@ -221,7 +234,7 @@ namespace GCS_Project.ViewModels
                 AppendLog("[시스템] 고도 저하 감지. 대기 상태로 전환합니다.");
             }
 
-            RefreshCommandStatesIfNeeded(); //03/22
+            RefreshCommandStatesIfNeeded();
         }
 
         private void ApplyDetectedTargets(List<DetectedTarget> targets)

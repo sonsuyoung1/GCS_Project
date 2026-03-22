@@ -13,6 +13,7 @@ namespace GCS_Project.ViewModels
         private readonly YoloMetaUdpService _yoloMetaUdpService;
         private readonly ObservableCollection<DetectedTarget> _detectedTargets = new();
         private readonly MavlinkService _mavlinkService;
+        private readonly DroneState _uiDrone = new DroneState();
         private DetectedTarget? _selectedTarget;
         private System.Timers.Timer _targetLostTimer;
         private string _flightMode = MODE_IDLE;
@@ -53,7 +54,7 @@ namespace GCS_Project.ViewModels
 
         #region [2. 속성 (Properties)]
         public MavlinkService MavlinkService => _mavlinkService;
-        public DroneState Drone => _mavlinkService.CurrentState;
+        public DroneState Drone => _uiDrone;
 
         // 현재는 MavlinkService의 타겟 리스트를 그대로 노출
         // 나중에 YoloMetaUdpService로 바꿔도 View/XAML 수정 없이 유지하기 위한 중간 창구

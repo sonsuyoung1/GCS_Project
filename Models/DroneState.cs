@@ -50,5 +50,29 @@ namespace GCS_Project.Models
 
         public double TargetAltitude { get => _targetAltitude; set => SetProperty(ref _targetAltitude, value); }
         public double TargetSpeed { get => _targetSpeed; set => SetProperty(ref _targetSpeed, value); }
+        //03/22
+        public DroneState Clone()
+        {
+            return new DroneState
+            {
+                Latitude = this.Latitude,
+                Longitude = this.Longitude,
+                Altitude = this.Altitude,
+                Speed = this.Speed,
+                IsConnected = this.IsConnected,
+                TakeoffLat = this.TakeoffLat,
+                TakeoffLng = this.TakeoffLng,
+                BatteryPercent = this.BatteryPercent,
+                IsArmed = this.IsArmed,
+                IsTargetDetected = this.IsTargetDetected,
+                TargetLat = this.TargetLat,
+                TargetLng = this.TargetLng,
+                Roll = this.Roll,
+                Pitch = this.Pitch,
+                Yaw = this.Yaw,
+                TargetAltitude = this.TargetAltitude,
+                TargetSpeed = this.TargetSpeed
+            };
+        }
     }
 }
