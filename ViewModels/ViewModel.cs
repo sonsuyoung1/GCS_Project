@@ -1,14 +1,9 @@
-﻿using Asv.Mavlink;
-using Asv.Mavlink.Minimal;
-using GCS_Project.Models;
+﻿using GCS_Project.Models;
 using GCS_Project.xServices;
 using System;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Input;
-using Newtonsoft.Json;
-using System.Net.Http;
-using System.Text;
 
 namespace GCS_Project.ViewModels
 {
@@ -20,7 +15,7 @@ namespace GCS_Project.ViewModels
         private readonly MavlinkService _mavlinkService;
         private DetectedTarget? _selectedTarget;
         private System.Timers.Timer _targetLostTimer;
-        private string _flightMode = "IDLE";
+        private string _flightMode = MODE_IDLE;
         private string _chatLog = "드론 연결 대기 중...";
         private int _currentWaypointCount = 0;
         private double _pitchOffset;
@@ -40,6 +35,19 @@ namespace GCS_Project.ViewModels
         private const string MODE_TAKEOFF = "TAKEOFF";
         private const string MODE_MISSION = "MISSION";
         private const string MODE_TRACKING = "TRACKING";
+        //버튼 상태에 영향을 주는 값만 따로 스냅샷으로 묶고, 그 스냅샷이 바뀔 때만 NotifyCommandStates()를 호출
+        private sealed record CommandStateSnapshot(
+            string FlightMode,
+            bool IsConnected,
+            bool IsArmed,
+            int WaypointCount,
+            bool HasSelectedTarget
+        );
+        private CommandStateSnapshot? _lastCommandStateSnapshot;
+        // yolo 최적화를 위한 필드 추가 03/22
+        private readonly object _targetLock = new();
+        private List<DetectedTarget> _latestTargets = new();
+        private System.Windows.Threading.DispatcherTimer? _targetUiTimer;
         #endregion
 
 
@@ -57,7 +65,13 @@ namespace GCS_Project.ViewModels
         public string FlightMode
         {
             get => _flightMode;
-            set { if (SetProperty(ref _flightMode, value)) NotifyCommandStates(); }
+            set
+            {
+                if (SetProperty(ref _flightMode, value))
+                {
+                    RefreshCommandStatesIfNeeded();
+                }
+            }
         }
         public string ChatLog
         {
@@ -86,7 +100,9 @@ namespace GCS_Project.ViewModels
             set
             {
                 if (SetProperty(ref _selectedTarget, value))
-                    (FollowCommand as RelayCommand)?.NotifyCanExecuteChanged();
+                {
+                    RefreshCommandStatesIfNeeded();
+                }
             }
         }
         public double PitchOffset
@@ -225,9 +241,10 @@ namespace GCS_Project.ViewModels
             _targetLostTimer.Elapsed += (s, e) => {
                 if (FlightMode == "TRACKING")
                 {
-                    Application.Current.Dispatcher.Invoke(() => {
-                        FlightMode = "TAKEOFF";
-                        ChatLog += "\n[경고] 타겟을 놓쳤습니다. 추적을 중단하고 대기합니다.";
+                    Application.Current.Dispatcher.BeginInvoke(() =>
+                    {
+                        FlightMode = MODE_TAKEOFF;
+                        AppendLog("[경고] 타겟을 놓쳤습니다. 추적을 중단하고 대기합니다.");
                     });
                 }
                 _targetLostTimer.Stop();
@@ -256,6 +273,7 @@ namespace GCS_Project.ViewModels
             _targetLostTimer?.Dispose();
             _mavlinkService?.StopAsync();
             _yoloMetaUdpService?.StopAsync();
+            _targetUiTimer?.Stop();
         }
     }
 }

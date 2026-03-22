@@ -25,13 +25,13 @@ namespace GCS_Project.ViewModels
             string userMsg = UserInputCommand;
             UserInputCommand = string.Empty;
 
-            ChatLog += $"\n[{DateTime.Now:HH:mm:ss}] USER >> {userMsg}";
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] USER >> {userMsg}");
 
             string aiJsonResponse = await GetOpenAIResponse(userMsg);
 
             if (aiJsonResponse.StartsWith("[통신 실패]") || aiJsonResponse.StartsWith("[오류 발생]"))
             {
-                ChatLog += $"\n{aiJsonResponse}";
+                AppendLog(aiJsonResponse);
                 return;
             }
 
@@ -46,11 +46,11 @@ namespace GCS_Project.ViewModels
 
                 if (aiCommand == null)
                 {
-                    ChatLog += "\n[시스템] AI 명령을 해독할 수 없습니다.";
+                    AppendLog("[시스템] AI 명령을 해독할 수 없습니다.");
                     return;
                 }
 
-                ChatLog += $"\n[{DateTime.Now:HH:mm:ss}] AI >> {aiCommand.Message}";
+                AppendLog($"[{DateTime.Now:HH:mm:ss}] AI >> {aiCommand.Message}");
 
                 switch (aiCommand.Action?.ToUpperInvariant())
                 {
@@ -68,7 +68,7 @@ namespace GCS_Project.ViewModels
 
                             Drone.TargetAltitude = altitude;
 
-                            ChatLog += $"\n[명령] 이륙 목표 고도 설정: {Drone.TargetAltitude:F1}m";
+                            AppendLog($"[명령] 이륙 목표 고도 설정: {Drone.TargetAltitude:F1}m");
 
                             ExecuteTakeoff();
                             break;
@@ -86,7 +86,7 @@ namespace GCS_Project.ViewModels
                         if (SelectedTarget != null)
                             ExecuteFollow();
                         else
-                            ChatLog += "\n[시스템 오류] 요격할 타겟이 선택되지 않았습니다.";
+                            AppendLog("[시스템 오류] 요격할 타겟이 선택되지 않았습니다.");
                         break;
 
                     case "ASCEND":
@@ -94,7 +94,7 @@ namespace GCS_Project.ViewModels
                         {
                             Drone.TargetAltitude = aiCommand.Value;
                             await _mavlinkService.ChangeTargetAltitude((float)Drone.TargetAltitude);
-                            ChatLog += $"\n[명령] 목표 고도를 {Drone.TargetAltitude:F1}m로 상승시킵니다.";
+                            AppendLog($"[명령] 목표 고도를 {Drone.TargetAltitude:F1}m로 상승시킵니다.");
                         }
                         break;
 
@@ -107,7 +107,7 @@ namespace GCS_Project.ViewModels
                                 Drone.TargetAltitude = 1;
 
                             await _mavlinkService.ChangeTargetAltitude((float)Drone.TargetAltitude);
-                            ChatLog += $"\n[명령] 목표 고도를 {Drone.TargetAltitude:F1}m로 하강시킵니다.";
+                            AppendLog($"[명령] 목표 고도를 {Drone.TargetAltitude:F1}m로 하강시킵니다.");
                         }
                         break;
 
@@ -120,13 +120,13 @@ namespace GCS_Project.ViewModels
 
                     case "NONE":
                     default:
-                        ChatLog += "\n[AI] 실행 가능한 명령이 아닙니다.";
+                        AppendLog("[AI] 실행 가능한 명령이 아닙니다.");
                         break;
                 }
             }
             catch (Exception ex)
             {
-                ChatLog += $"\n[시스템] AI 명령 해석 실패. 다시 명령해 주세요. (오류: {ex.Message})";
+                AppendLog($"[시스템] AI 명령 해석 실패. 다시 명령해 주세요. (오류: {ex.Message})");
             }
         }
 

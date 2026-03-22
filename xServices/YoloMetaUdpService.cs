@@ -25,7 +25,8 @@ namespace GCS_Project.xServices
 
         public Task StartAsync()
         {
-            if (_cts != null) return Task.CompletedTask;
+            if (_cts != null || _udpClient != null)
+                return Task.CompletedTask;
 
             _cts = new CancellationTokenSource();
             _udpClient = new UdpClient(_listenPort);
@@ -38,16 +39,25 @@ namespace GCS_Project.xServices
 
         public Task StopAsync()
         {
+            if (_cts == null && _udpClient == null)
+                return Task.CompletedTask;
+
             try
             {
                 _cts?.Cancel();
                 _udpClient?.Close();
                 _udpClient?.Dispose();
             }
-            catch { }
-
-            _cts = null;
-            _udpClient = null;
+            catch
+            {
+                // 종료 중 예외 무시
+            }
+            finally
+            {
+                _cts?.Dispose();
+                _cts = null;
+                _udpClient = null;
+            }
 
             OnLogReceived?.Invoke("[YOLO-UDP] 메타 수신 중지");
             return Task.CompletedTask;
@@ -57,9 +67,9 @@ namespace GCS_Project.xServices
         {
             if (_udpClient == null) return;
 
-            while (!token.IsCancellationRequested)
+            try
             {
-                try
+                while (!token.IsCancellationRequested)
                 {
                     var result = await _udpClient.ReceiveAsync();
                     string json = Encoding.UTF8.GetString(result.Buffer);
@@ -67,11 +77,21 @@ namespace GCS_Project.xServices
                     var targets = ParseTargets(json);
                     OnTargetsReceived?.Invoke(targets);
                 }
-                catch (ObjectDisposedException)
+            }
+            catch (ObjectDisposedException)
+            {
+                // 정상 종료
+            }
+            catch (SocketException)
+            {
+                if (!token.IsCancellationRequested)
                 {
-                    break;
+                    OnLogReceived?.Invoke("[YOLO-UDP][오류] 소켓 수신 중 오류가 발생했습니다.");
                 }
-                catch (Exception ex)
+            }
+            catch (Exception ex)
+            {
+                if (!token.IsCancellationRequested)
                 {
                     OnLogReceived?.Invoke($"[YOLO-UDP][오류] {ex.Message}");
                 }
@@ -82,31 +102,38 @@ namespace GCS_Project.xServices
         {
             var list = new List<DetectedTarget>();
 
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (!root.TryGetProperty("targets", out JsonElement targetsElement) ||
-                targetsElement.ValueKind != JsonValueKind.Array)
+            try
             {
-                return list;
-            }
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
 
-            foreach (var item in targetsElement.EnumerateArray())
-            {
-                var target = new DetectedTarget
+                if (!root.TryGetProperty("targets", out JsonElement targetsElement) ||
+                    targetsElement.ValueKind != JsonValueKind.Array)
                 {
-                    ID = item.TryGetProperty("id", out var idEl) ? idEl.GetInt32() : 0,
-                    TargetType = item.TryGetProperty("class", out var classEl) ? classEl.GetString() ?? "Unknown" : "Unknown",
-                    Lat = item.TryGetProperty("lat", out var latEl) ? latEl.GetDouble() : 0.0,
-                    Lng = item.TryGetProperty("lng", out var lngEl) ? lngEl.GetDouble() : 0.0,
-                    Bx = item.TryGetProperty("cx", out var cxEl) ? cxEl.GetDouble() : 0.0,
-                    By = item.TryGetProperty("cy", out var cyEl) ? cyEl.GetDouble() : 0.0,
-                    Bw = item.TryGetProperty("w", out var wEl) ? wEl.GetDouble() : 0.0,
-                    Bh = item.TryGetProperty("h", out var hEl) ? hEl.GetDouble() : 0.0,
-                    IsBeingTracked = item.TryGetProperty("tracked", out var trackedEl) && trackedEl.GetBoolean()
-                };
+                    return list;
+                }
 
-                list.Add(target);
+                foreach (var item in targetsElement.EnumerateArray())
+                {
+                    var target = new DetectedTarget
+                    {
+                        ID = item.TryGetProperty("id", out var idEl) ? idEl.GetInt32() : 0,
+                        TargetType = item.TryGetProperty("class", out var classEl) ? classEl.GetString() ?? "Unknown" : "Unknown",
+                        Lat = item.TryGetProperty("lat", out var latEl) ? latEl.GetDouble() : 0.0,
+                        Lng = item.TryGetProperty("lng", out var lngEl) ? lngEl.GetDouble() : 0.0,
+                        Bx = item.TryGetProperty("cx", out var cxEl) ? cxEl.GetDouble() : 0.0,
+                        By = item.TryGetProperty("cy", out var cyEl) ? cyEl.GetDouble() : 0.0,
+                        Bw = item.TryGetProperty("w", out var wEl) ? wEl.GetDouble() : 0.0,
+                        Bh = item.TryGetProperty("h", out var hEl) ? hEl.GetDouble() : 0.0,
+                        IsBeingTracked = item.TryGetProperty("tracked", out var trackedEl) && trackedEl.GetBoolean()
+                    };
+
+                    list.Add(target);
+                }
+            }
+            catch (JsonException)
+            {
+                // 잘못된 JSON은 조용히 무시하거나 필요 시 로그 1줄만
             }
 
             return list;
