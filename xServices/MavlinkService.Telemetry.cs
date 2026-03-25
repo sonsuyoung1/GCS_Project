@@ -162,6 +162,15 @@ namespace GCS_Project.xServices
                      PublishState();
                  })
                  .AddTo(_subs);
+            //디버깅용
+            _router!.OnRxMessage
+                .OfType<IProtocolMessage, GlobalPositionIntPacket>()
+                .Subscribe(packet =>
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[RAW-GP] lat={packet.Payload.Lat}, lon={packet.Payload.Lon}, alt={packet.Payload.Alt}, relAlt={packet.Payload.RelativeAlt}");
+                })
+                .AddTo(_subs);
         }
 
         private void HookCommandAck(IClientDevice drone)
