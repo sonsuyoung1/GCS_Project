@@ -39,7 +39,7 @@ namespace GCS_Project.xServices
         private IClientDevice? _drone;
         private readonly object _waypointsLock = new();
 
-        // 03/22
+        // 03/22 디버깅용
         private DateTime _lastUiUpdate = DateTime.MinValue;
         private void PublishState()
         {
@@ -241,6 +241,7 @@ namespace GCS_Project.xServices
                 // 시작 실패 정리 중 예외는 무시
             }
         }
+
         #endregion
 
         #region [5. 자원 해제 (Dispose)]

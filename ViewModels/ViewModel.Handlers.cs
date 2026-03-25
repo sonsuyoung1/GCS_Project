@@ -188,6 +188,10 @@ namespace GCS_Project.ViewModels
         {
             state.DebugHandleUtc = DateTime.UtcNow; //디버깅용
 
+            System.Diagnostics.Debug.WriteLine(
+                $"[HANDLE] sample={state.SampleId}, alt={state.Altitude:F2}, lat={state.Latitude:F6}, lon={state.Longitude:F6}, yaw={state.Yaw:F1}");
+
+
             if (!state.IsConnected)
             {
                 RefreshCommandStatesIfNeeded();
