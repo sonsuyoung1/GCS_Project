@@ -60,7 +60,7 @@ namespace GCS_Project
             }
             await InitializeMapAsync();
 
-            // PlayRtpStream(_mp1);
+            PlayRtpStream(_mp1);
         }
 
         private async Task InitializeMapAsync()
@@ -211,21 +211,6 @@ namespace GCS_Project
             }
         }
 
-        private void PlayLocalFile(MediaPlayer? mp, string fileName)
-        {
-            if (mp == null || _libVLC == null) return;
-
-            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, fileName);
-
-            if (!File.Exists(path))
-            {
-                MessageBox.Show($"파일 없음: {path}\n실행 폴더(bin\\...)에 {fileName}이 있어야 함");
-                return;
-            }
-
-            using var media = new LibVLCSharp.Shared.Media(_libVLC, new Uri(path));
-            mp.Play(media);
-        }
 
         private void PlayRtpStream(MediaPlayer? mp)
         {
