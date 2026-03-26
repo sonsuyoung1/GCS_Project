@@ -2,6 +2,7 @@
 using GCS_Project.xServices;
 using System;
 using System.Collections.ObjectModel;
+using System.Text;
 using System.Windows;
 using System.Windows.Input;
 
@@ -18,6 +19,7 @@ namespace GCS_Project.ViewModels
         private System.Timers.Timer _targetLostTimer;
         private string _flightMode = MODE_IDLE;
         private string _chatLog = "드론 연결 대기 중...";
+        private readonly StringBuilder _chatLogBuffer = new StringBuilder("드론 연결 대기 중...");
         private int _currentWaypointCount = 0;
         private double _pitchOffset;
         private double _headingOffset;
@@ -31,7 +33,11 @@ namespace GCS_Project.ViewModels
         //scan 03/16
         private CancellationTokenSource? _scanCts;
         private bool _isScanning = false;
+        //03/26
+        private DroneState? _pendingState;
+        private bool _uiUpdating = false;
 
+        private bool _batteryWarningShown = false;
         private const string MODE_IDLE = "IDLE";
         private const string MODE_TAKEOFF = "TAKEOFF";
         private const string MODE_MISSION = "MISSION";
@@ -278,7 +284,7 @@ namespace GCS_Project.ViewModels
             _mavlinkService?.StopAsync();
             _yoloMetaUdpService?.StopAsync();
             _targetUiTimer?.Stop();
-            _droneUiTimer?.Stop();
+            //_droneUiTimer?.Stop();
         }
     }
 }

@@ -24,7 +24,7 @@ namespace GCS_Project
         private LibVLC? _libVLC;
         private LibVLCSharp.Shared.MediaPlayer? _mp1;
         private OverlayWindow? _overlayWindow;
-
+        private bool _mapBridgeInitialized = false;
         // ===== Video Frame Size (YOLO 입력 해상도) =====
         private const double FRAME_WIDTH = 1920.0;
         private const double FRAME_HEIGHT = 1080.0;
@@ -83,8 +83,8 @@ namespace GCS_Project
             this.StateChanged += MainWindow_WindowChanged;
             this.Closing += MainWindow_Closing;
 
-            _mapTimer = new System.Windows.Threading.DispatcherTimer();
-            _mapTimer.Interval = TimeSpan.FromMilliseconds(200);
+            /*_mapTimer = new System.Windows.Threading.DispatcherTimer();
+            _mapTimer.Interval = TimeSpan.FromMilliseconds(50);
             _mapTimer.Tick += async (s, e) =>
             {
                 if (!_mapDirty || _mapController == null) return;
@@ -100,7 +100,7 @@ namespace GCS_Project
                 _latestMapLng = lng;
                 _latestMapHeading = heading;
                 _mapDirty = true;
-            };
+            };*/
         }
         #endregion
 
@@ -251,6 +251,9 @@ namespace GCS_Project
         private void InitializeMapBridge()
         {
             if (_viewModel == null || _mapController == null) return;
+            if (_mapBridgeInitialized) return;
+
+            _mapBridgeInitialized = true;
 
             // 1. 드론 실시간 위치 업데이트 
             _viewModel.PositionUpdated += (lat, lng, heading) => //03/02
@@ -463,8 +466,11 @@ namespace GCS_Project
         {
             try
             {
-                //_overlayTimer?.Stop();
+                _overlayTimer?.Stop();
                 _overlayTimer = null;
+
+                /*_mapTimer?.Stop();
+                _mapTimer = null;*/
 
                 _overlayWindow?.Close();
                 _overlayWindow = null;
