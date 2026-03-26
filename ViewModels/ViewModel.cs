@@ -58,6 +58,20 @@ namespace GCS_Project.ViewModels
         private readonly object _droneStateLock = new();
         private DroneState? _latestDroneState;
         private System.Windows.Threading.DispatcherTimer? _droneUiTimer;
+        private System.Windows.Threading.DispatcherTimer? _mapUiTimer;
+        private System.Windows.Threading.DispatcherTimer? _statusUiTimer;
+        private readonly object _telemetryUiLock = new();
+        //03/26
+        private DroneState _latestHudState = new DroneState(); //계기판용 최신 상태 저장
+        //지도용 최신 좌표 저장
+        private double _latestMapLat;
+        private double _latestMapLng;
+        private double _latestMapHeading;
+        private double? _latestTakeoffLat;
+        private double? _latestTakeoffLng;
+        private bool _latestBatteryWarning;
+
+
         #endregion
 
 
@@ -284,7 +298,8 @@ namespace GCS_Project.ViewModels
             _mavlinkService?.StopAsync();
             _yoloMetaUdpService?.StopAsync();
             _targetUiTimer?.Stop();
-            //_droneUiTimer?.Stop();
+            _droneUiTimer?.Stop();
+            _statusUiTimer?.Stop();
         }
     }
 }

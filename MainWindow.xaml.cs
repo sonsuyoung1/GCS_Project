@@ -33,12 +33,11 @@ namespace GCS_Project
         private System.Windows.Threading.DispatcherTimer? _overlayTimer;
 
         private int? _selectedTargetId = null;
-
-        private double _latestMapLat;
-        private double _latestMapLng;
-        private double _latestMapHeading;
-        private bool _mapDirty = false;
-        private System.Windows.Threading.DispatcherTimer? _mapTimer;
+        private bool _mapUpdating = false;
+        private bool _mapPending = false;
+        private double _pendingMapLat;
+        private double _pendingMapLng;
+        private double _pendingMapHeading;
         #endregion
 
 
@@ -83,24 +82,6 @@ namespace GCS_Project
             this.StateChanged += MainWindow_WindowChanged;
             this.Closing += MainWindow_Closing;
 
-            /*_mapTimer = new System.Windows.Threading.DispatcherTimer();
-            _mapTimer.Interval = TimeSpan.FromMilliseconds(50);
-            _mapTimer.Tick += async (s, e) =>
-            {
-                if (!_mapDirty || _mapController == null) return;
-
-                _mapDirty = false;
-                await _mapController.UpdateDroneLocation(_latestMapLat, _latestMapLng, _latestMapHeading);
-            };
-            _mapTimer.Start();
-
-            _viewModel.PositionUpdated += (lat, lng, heading) =>
-            {
-                _latestMapLat = lat;
-                _latestMapLng = lng;
-                _latestMapHeading = heading;
-                _mapDirty = true;
-            };*/
         }
         #endregion
 
@@ -162,11 +143,11 @@ namespace GCS_Project
                     {
                         // 지도가 100% 켜졌을 때만 C#과 JS 브릿지 연결
                         InitializeMapBridge();
-                        System.Diagnostics.Debug.WriteLine("[시스템] 지도 로딩 완료 및 브릿지 연결 성공!");
+                        //System.Diagnostics.Debug.WriteLine("[시스템] 지도 로딩 완료 및 브릿지 연결 성공!");
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine($"[시스템] 지도 로딩 실패: {args.WebErrorStatus}");
+                        //System.Diagnostics.Debug.WriteLine($"[시스템] 지도 로딩 실패: {args.WebErrorStatus}");
                     }
                 };
 
@@ -181,7 +162,7 @@ namespace GCS_Project
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("지도 파일을 찾을 수 없습니다: " + mapPath);
+                    //System.Diagnostics.Debug.WriteLine("지도 파일을 찾을 수 없습니다: " + mapPath);
                 }
             }
             catch (Exception ex)
@@ -255,20 +236,46 @@ namespace GCS_Project
 
             _mapBridgeInitialized = true;
 
-            // 1. 드론 실시간 위치 업데이트 
-            _viewModel.PositionUpdated += (lat, lng, heading) => //03/02
+            // 1. 드론 실시간 위치 업데이트 (single-flight)
+            _viewModel.PositionUpdated += (lat, lng, heading) =>
             {
+                _pendingMapLat = lat;
+                _pendingMapLng = lng;
+                _pendingMapHeading = heading;
+                _mapPending = true;
+
+                if (_mapUpdating) return;
+
+                _mapUpdating = true;
+
                 Dispatcher.InvokeAsync(async () =>
                 {
-                    if (_mapController != null)
-                        await _mapController.UpdateDroneLocation(lat, lng, heading);
+                    try
+                    {
+                        while (_mapPending)
+                        {
+                            _mapPending = false;
+
+                            double latNow = _pendingMapLat;
+                            double lngNow = _pendingMapLng;
+                            double headingNow = _pendingMapHeading;
+
+                            if (_mapController != null)
+                            {
+                                await _mapController.UpdateDroneLocation(latNow, lngNow, headingNow);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        _mapUpdating = false;
+                    }
                 });
             };
 
             // 2. 이륙 지점 마커 설정
             _viewModel.TakeoffPointSet += (lat, lng) =>
             {
-                // UI 스레드에서 실행되도록 Dispatcher로 감싸줍니다.
                 Dispatcher.InvokeAsync(async () =>
                 {
                     if (_mapController != null)
@@ -281,8 +288,8 @@ namespace GCS_Project
             // 3. 경로(웨이포인트) 관리
             _viewModel.UndoWaypointRequested += async () =>
             {
-                // UI 스레드에서 실행되도록 보장
-                await Dispatcher.InvokeAsync(async () => {
+                await Dispatcher.InvokeAsync(async () =>
+                {
                     await _mapController.UndoLastWaypointOnMap();
                 });
             };
@@ -306,19 +313,6 @@ namespace GCS_Project
                     await mapWebView.ExecuteScriptAsync("clearAllMapElements()");
                 });
             };
-
-
-            /*// 4. YOLO 다중 타겟 실시간 업데이트 및 이동
-            // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.
-            _viewModel.MavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
-            {
-                Dispatcher.Invoke(async () =>
-                {
-                    await _mapController.UpdateTargetOnMap(id, lat, lng, type, isTracked);
-                });
-            };*/
-
-
         }
         #endregion
 
@@ -426,7 +420,7 @@ namespace GCS_Project
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[JS Bridge Error] {ex.Message}");
+                //System.Diagnostics.Debug.WriteLine($"[JS Bridge Error] {ex.Message}");
             }
         }
 
@@ -468,9 +462,6 @@ namespace GCS_Project
             {
                 _overlayTimer?.Stop();
                 _overlayTimer = null;
-
-                /*_mapTimer?.Stop();
-                _mapTimer = null;*/
 
                 _overlayWindow?.Close();
                 _overlayWindow = null;
