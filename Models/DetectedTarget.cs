@@ -13,6 +13,7 @@ namespace GCS_Project.Models
         private double _lat;
         private double _lng;
         private bool _isBeingTracked;
+        private double _bx, _by, _bw, _bh;
 
         // 1. 객체 고유 ID (YOLO/Tracker에서 부여한 번호)
         public int ID { get; set; }
@@ -40,6 +41,12 @@ namespace GCS_Project.Models
             get => _isBeingTracked;
             set { _isBeingTracked = value; OnPropertyChanged(); }
         }
+
+        // ===== YOLO BBOX 위치 저장=====
+        public double Bx { get => _bx; set { _bx = value; OnPropertyChanged(); } }
+        public double By { get => _by; set { _by = value; OnPropertyChanged(); } }
+        public double Bw { get => _bw; set { _bw = value; OnPropertyChanged(); } }
+        public double Bh { get => _bh; set { _bh = value; OnPropertyChanged(); } }
 
         // UI 갱신을 위한 인터페이스 구현
         public event PropertyChangedEventHandler? PropertyChanged;
