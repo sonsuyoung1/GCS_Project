@@ -22,6 +22,16 @@ namespace GCS_Project.Models
         private bool _isTargetDetected;
         private double _targetLat;
         private double _targetLng;
+        private double _roll;
+        private double _pitch;
+        private double _yaw;
+        private double _targetAltitude = 5.0;
+        private double _targetSpeed = 2.0;
+        //디버깅용임 나중에 삭제 요망 
+        private DateTime _debugRxUtc;
+        private DateTime _debugPublishUtc;
+        private DateTime _debugHandleUtc;
+        private DateTime _debugMapUtc;
 
         // 2. 속성 선언 (SetProperty 방식 적용)
         public double Latitude { get => _latitude; set => SetProperty(ref _latitude, value); }
@@ -34,13 +44,50 @@ namespace GCS_Project.Models
         public int BatteryPercent { get => _batteryPercent; set => SetProperty(ref _batteryPercent, value); }
         public bool IsArmed { get => _isArmed; set => SetProperty(ref _isArmed, value); }
 
-        // 어차피 뷰모델이 가져다 계산만 할 거니까 알림 장치 다 떼고 순수하게 값만 저장.
-        public double Pitch { get; set; }
-        public double Roll { get; set; }
-        public double Heading { get; set; }
+        public double Roll { get => _roll; set => SetProperty(ref _roll, value); }
+        public double Pitch { get => _pitch; set => SetProperty(ref _pitch, value); }
+        public double Yaw { get => _yaw; set => SetProperty(ref _yaw, value); }
 
         public bool IsTargetDetected { get => _isTargetDetected; set => SetProperty(ref _isTargetDetected, value); }
         public double TargetLat { get => _targetLat; set => SetProperty(ref _targetLat, value); }
         public double TargetLng { get => _targetLng; set => SetProperty(ref _targetLng, value); }
+
+        public double TargetAltitude { get => _targetAltitude; set => SetProperty(ref _targetAltitude, value); }
+        public double TargetSpeed { get => _targetSpeed; set => SetProperty(ref _targetSpeed, value); }
+        //아래는 디버깅용임 삭제해야돼(아래 4줄)
+        public DateTime DebugRxUtc { get => _debugRxUtc; set => SetProperty(ref _debugRxUtc, value); }
+        public DateTime DebugPublishUtc { get => _debugPublishUtc; set => SetProperty(ref _debugPublishUtc, value); }
+        public DateTime DebugHandleUtc { get => _debugHandleUtc; set => SetProperty(ref _debugHandleUtc, value); }
+        public DateTime DebugMapUtc { get => _debugMapUtc; set => SetProperty(ref _debugMapUtc, value); }
+
+        //03/22
+        public DroneState Clone()
+        {
+            return new DroneState
+            {
+                Latitude = this.Latitude,
+                Longitude = this.Longitude,
+                Altitude = this.Altitude,
+                Speed = this.Speed,
+                IsConnected = this.IsConnected,
+                TakeoffLat = this.TakeoffLat,
+                TakeoffLng = this.TakeoffLng,
+                BatteryPercent = this.BatteryPercent,
+                IsArmed = this.IsArmed,
+                IsTargetDetected = this.IsTargetDetected,
+                TargetLat = this.TargetLat,
+                TargetLng = this.TargetLng,
+                Roll = this.Roll,
+                Pitch = this.Pitch,
+                Yaw = this.Yaw,
+                TargetAltitude = this.TargetAltitude,
+                TargetSpeed = this.TargetSpeed,
+                //debuging
+                DebugRxUtc = this.DebugRxUtc,
+                DebugPublishUtc = this.DebugPublishUtc,
+                DebugHandleUtc = this.DebugHandleUtc,
+                DebugMapUtc = this.DebugMapUtc,
+            };
+        }
     }
 }

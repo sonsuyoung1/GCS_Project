@@ -101,8 +101,6 @@
             [36.6912, 126.5828],
             { icon: createDroneIcon(droneHeadingDeg) }
         ).addTo(map);
-        var pathPoints = [];
-        var dronePath = L.polyline([], { color: '#00ff00', weight: 3 }).addTo(map);
 
         var targetMarkers = {}; //  핵심: ID별 타겟 마커 저장소 (Dictionary)
         var waypointMarkers = [];
@@ -120,9 +118,6 @@
                 droneHeadingDeg = headingDeg;
                 droneMarker.setIcon(createDroneIcon(droneHeadingDeg));
             }
-
-            pathPoints.push(newLatLng);
-            dronePath.setLatLngs(pathPoints);
         }
 
 
@@ -153,7 +148,20 @@
         function addTakeoffMarker(lat, lng) {
             if (window.takeoffMarker) map.removeLayer(window.takeoffMarker);
             var takeoffIcon = L.divIcon({
-                html: `<div style="background:#27ae60; color:white; border-radius:50%; width:25px; height:25px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white;">H</div>`,
+                html: `<div style="
+                            background: #27ae60; 
+                            color: white; 
+                            border-radius: 15px; /* 50%에서 15px로 변경하여 예쁜 알약 모양 만들기 */
+                            padding: 4px 10px;   /* 고정된 크기 대신 글자 길이에 맞춰 늘어나도록 여백(Padding) 추가 */
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center; 
+                            font-weight: bold; 
+                            font-size: 12px;
+                            border: 2px solid white;
+                            box-shadow: 0 2px 5px rgba(0,0,0,0.4); /* 지도에서 확 튀게 그림자 살짝! */
+                            white-space: nowrap; /* 글자가 밑으로 안 떨어지게 꽉 잡아줌 */
+                        ">Takeoff</div>`,
                 className: '', iconSize: [25, 25], iconAnchor: [12, 12]
             });
             window.takeoffMarker = L.marker([lat, lng], { icon: takeoffIcon }).addTo(map).bindPopup("Takeoff Point");
@@ -168,19 +176,19 @@
             var wpIcon = L.divIcon({
                 className: '', // 기본 클래스 제거
                 html: `<div style="
-            background: #3498db; 
-            color: white; 
-            border-radius: 50%; 
-            width: 20px; 
-            height: 20px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            font-size: 11px; 
-            font-weight: bold;
-            border: 2px solid white;
-            box-shadow: 0 0 5px rgba(0,0,0,0.5); /* 가독성을 위한 그림자 살짝 추가 */
-            ">${wpNumber}</div>`,
+                            background: #3498db; 
+                            color: white; 
+                            border-radius: 50%; 
+                            width: 20px; 
+                            height: 20px; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center; 
+                            font-size: 11px; 
+                            font-weight: bold;
+                            border: 2px solid white;
+                            box-shadow: 0 0 5px rgba(0,0,0,0.5); /* 가독성을 위한 그림자 살짝 추가 */
+                            ">${wpNumber}</div>`,
                 iconSize: [20, 20],
                 iconAnchor: [10, 10]
             });
@@ -220,8 +228,6 @@
             // 타겟 마커들도 모두 제거
             Object.values(targetMarkers).forEach(m => map.removeLayer(m));
             targetMarkers = {};
-            dronePath.setLatLngs([]);
-            pathPoints = [];
         }
 
     </script>
