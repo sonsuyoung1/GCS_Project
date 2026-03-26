@@ -40,16 +40,19 @@ namespace GCS_Project.ViewModels
         {
             if (string.IsNullOrWhiteSpace(message)) return;
 
-            ChatLog += $"\n{message}";
+            _chatLogBuffer.AppendLine(message);
 
-            // 로그가 너무 길어지면 뒤쪽만 남김
             const int maxLen = 5000;
             const int keepLen = 3000;
 
-            if (ChatLog.Length > maxLen)
+            if (_chatLogBuffer.Length > maxLen)
             {
-                ChatLog = ChatLog.Substring(ChatLog.Length - keepLen);
+                var text = _chatLogBuffer.ToString();
+                _chatLogBuffer.Clear();
+                _chatLogBuffer.Append(text.Substring(text.Length - keepLen));
             }
+
+            ChatLog = _chatLogBuffer.ToString();
         }
         private async void InitializeService()
         {
@@ -59,10 +62,27 @@ namespace GCS_Project.ViewModels
             // ===== 1. 이벤트 구독 먼저 =====
             _mavlinkService.OnDataUpdated += (state) =>
             {
-                lock (_droneStateLock)
+                _pendingState = state;
+
+                if (_uiUpdating) return;
+
+                _uiUpdating = true;
+
+                Application.Current.Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    _latestDroneState = state;
-                }
+                    try
+                    {
+                        var latest = _pendingState;
+                        _pendingState = null;
+
+                        if (latest != null)
+                            HandleDroneData(latest);
+                    }
+                    finally
+                    {
+                        _uiUpdating = false;
+                    }
+                }));
             };
 
             _mavlinkService.OnWaypointCountChanged += (count) =>
@@ -108,22 +128,6 @@ namespace GCS_Project.ViewModels
                 }
             };
 
-            try
-            {
-                await _mavlinkService.StartAsync();
-                AppendLog("[시스템] MAVLink 연결 성공");
-
-                await _yoloMetaUdpService.StartAsync();
-                AppendLog("[시스템] YOLO UDP 메타 수신 시작");
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"[오류] 서비스 시작 실패: {ex.Message}");
-            }
-            finally
-            {
-                _mavStarting = false;
-            }
             //yolo 최적화 03/22
             _targetUiTimer = new System.Windows.Threading.DispatcherTimer();
             _targetUiTimer.Interval = TimeSpan.FromMilliseconds(100);
@@ -139,8 +143,8 @@ namespace GCS_Project.ViewModels
             };
             _targetUiTimer.Start();
 
-            _droneUiTimer = new System.Windows.Threading.DispatcherTimer();
-            _droneUiTimer.Interval = TimeSpan.FromMilliseconds(100);
+            /*_droneUiTimer = new System.Windows.Threading.DispatcherTimer();
+            _droneUiTimer.Interval = TimeSpan.FromMilliseconds(50);
             _droneUiTimer.Tick += (s, e) =>
             {
                 DroneState? snapshot = null;
@@ -159,7 +163,25 @@ namespace GCS_Project.ViewModels
                     HandleDroneData(snapshot);
                 }
             };
-            _droneUiTimer.Start();
+            _droneUiTimer.Start();*/
+
+            try
+            {
+                await _mavlinkService.StartAsync("0.0.0.0", 14600, "192.168.0.25");
+                AppendLog("[시스템] MAVLink 연결 성공");
+
+                await _yoloMetaUdpService.StartAsync();
+                AppendLog("[시스템] YOLO UDP 메타 수신 시작");
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[오류] 서비스 시작 실패: {ex.Message}");
+            }
+            finally
+            {
+                _mavStarting = false;
+            }
+            
             // 타겟 업데이트
             /*_mavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
             {
@@ -188,10 +210,6 @@ namespace GCS_Project.ViewModels
         {
             state.DebugHandleUtc = DateTime.UtcNow; //디버깅용
 
-            System.Diagnostics.Debug.WriteLine(
-                $"[HANDLE] sample={state.SampleId}, alt={state.Altitude:F2}, lat={state.Latitude:F6}, lon={state.Longitude:F6}, yaw={state.Yaw:F1}");
-
-
             if (!state.IsConnected)
             {
                 RefreshCommandStatesIfNeeded();
@@ -204,25 +222,25 @@ namespace GCS_Project.ViewModels
                 return;
             }
 
-            _uiDrone.Latitude = state.Latitude;
-            _uiDrone.Longitude = state.Longitude;
-            _uiDrone.Altitude = state.Altitude;
-            _uiDrone.Speed = state.Speed;
-            _uiDrone.IsConnected = state.IsConnected;
-            _uiDrone.TakeoffLat = state.TakeoffLat;
-            _uiDrone.TakeoffLng = state.TakeoffLng;
-            _uiDrone.BatteryPercent = state.BatteryPercent;
-            _uiDrone.IsArmed = state.IsArmed;
-            _uiDrone.IsTargetDetected = state.IsTargetDetected;
-            _uiDrone.TargetLat = state.TargetLat;
-            _uiDrone.TargetLng = state.TargetLng;
-            _uiDrone.Roll = state.Roll;
-            _uiDrone.Pitch = state.Pitch;
-            _uiDrone.Yaw = state.Yaw;
-            _uiDrone.TargetAltitude = state.TargetAltitude;
-            _uiDrone.TargetSpeed = state.TargetSpeed;
-
-            /*if ((DateTime.UtcNow - _lastMapUpdate).TotalMilliseconds > 500)
+            if (_uiDrone.Latitude != state.Latitude) _uiDrone.Latitude = state.Latitude;
+            if (_uiDrone.Longitude != state.Longitude) _uiDrone.Longitude = state.Longitude;
+            if (_uiDrone.Altitude != state.Altitude) _uiDrone.Altitude = state.Altitude;
+            if (_uiDrone.Speed != state.Speed) _uiDrone.Speed = state.Speed;
+            if (_uiDrone.IsConnected != state.IsConnected) _uiDrone.IsConnected = state.IsConnected;
+            if (_uiDrone.TakeoffLat != state.TakeoffLat) _uiDrone.TakeoffLat = state.TakeoffLat;
+            if (_uiDrone.TakeoffLng != state.TakeoffLng) _uiDrone.TakeoffLng = state.TakeoffLng;
+            if (_uiDrone.BatteryPercent != state.BatteryPercent) _uiDrone.BatteryPercent = state.BatteryPercent;
+            if (_uiDrone.IsArmed != state.IsArmed) _uiDrone.IsArmed = state.IsArmed;
+            if (_uiDrone.IsTargetDetected != state.IsTargetDetected) _uiDrone.IsTargetDetected = state.IsTargetDetected;
+            if (_uiDrone.TargetLat != state.TargetLat) _uiDrone.TargetLat = state.TargetLat;
+            if (_uiDrone.TargetLng != state.TargetLng) _uiDrone.TargetLng = state.TargetLng;
+            if (_uiDrone.Roll != state.Roll) _uiDrone.Roll = state.Roll;
+            if (_uiDrone.Pitch != state.Pitch) _uiDrone.Pitch = state.Pitch;
+            if (_uiDrone.Yaw != state.Yaw) _uiDrone.Yaw = state.Yaw;
+            if (_uiDrone.TargetAltitude != state.TargetAltitude) _uiDrone.TargetAltitude = state.TargetAltitude;
+            if (_uiDrone.TargetSpeed != state.TargetSpeed) _uiDrone.TargetSpeed = state.TargetSpeed;
+            /*if ((DateTime.UtcNow - _lastMapUpdate).TotalMilliseconds > 
+           500)
             {
                 _lastMapUpdate = DateTime.UtcNow;
                 PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
@@ -234,20 +252,11 @@ namespace GCS_Project.ViewModels
                 }
             }*/
             // 디버깅용
-            if ((DateTime.UtcNow - _lastMapUpdate).TotalMilliseconds > 500)
+            if ((DateTime.UtcNow - _lastMapUpdate).TotalMilliseconds > 50)
             {
                 _lastMapUpdate = DateTime.UtcNow;
-                state.DebugMapUtc = DateTime.UtcNow;
 
                 PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
-
-                var rxToPublish = (state.DebugPublishUtc - state.DebugRxUtc).TotalMilliseconds;
-                var publishToHandle = (state.DebugHandleUtc - state.DebugPublishUtc).TotalMilliseconds;
-                var handleToMap = (state.DebugMapUtc - state.DebugHandleUtc).TotalMilliseconds;
-                var total = (state.DebugMapUtc - state.DebugRxUtc).TotalMilliseconds;
-
-                System.Diagnostics.Debug.WriteLine(
-                    $"[TEL-LAG] rx→pub={rxToPublish:F0}ms, pub→handle={publishToHandle:F0}ms, handle→map={handleToMap:F0}ms, total={total:F0}ms");
 
                 if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue && !_isTakeoffMarkerDrawn)
                 {
@@ -259,13 +268,16 @@ namespace GCS_Project.ViewModels
             PitchOffset = state.Pitch * 3.55;
             HeadingOffset = -state.Yaw;
 
-            //아래 두줄은 디버깅용
-            System.Diagnostics.Debug.WriteLine(
-                $"[HUD] alt={state.Altitude:F1}, yaw={state.Yaw:F1}, connected={state.IsConnected}, armed={state.IsArmed}");
-
-            if (state.BatteryPercent > 0 && state.BatteryPercent <= 20 && !ChatLog.Contains("배터리 부족"))
+            //디버깅용
+            if (state.BatteryPercent > 0 && state.BatteryPercent <= 20 && !_batteryWarningShown)
             {
+                _batteryWarningShown = true;
                 AppendLog($"[경고] 기체 배터리 부족: {state.BatteryPercent}%");
+            }
+
+            if (state.BatteryPercent > 20)
+            {
+                _batteryWarningShown = false;
             }
 
             if (state.Altitude > 1.0)

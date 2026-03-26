@@ -32,6 +32,7 @@ namespace GCS_Project.xServices
         private DateTime _lastHeartbeatUtc = DateTime.MinValue;
         private Task? _linkWatchdogTask;
         private IDisposable? _uiUpdateTimer;
+        private readonly object _stateLock = new();
 
         private IProtocolFactory? _protocol;
         private IProtocolRouter? _router;
@@ -41,16 +42,35 @@ namespace GCS_Project.xServices
 
         // 03/22 디버깅용
         private DateTime _lastUiUpdate = DateTime.MinValue;
+        private DateTime _lastRawLogUtc = DateTime.MinValue;
+        private DateTime _lastRawGpUtc = DateTime.MinValue;
+        private DateTime _lastRawAttUtc = DateTime.MinValue;
+        /* private void PublishState()
+         {
+             if ((DateTime.UtcNow - _lastUiUpdate).TotalMilliseconds < 100)
+                 return;
+
+             _lastUiUpdate = DateTime.UtcNow;
+
+             DroneState snapshot;
+             lock (_stateLock)
+             {
+                 snapshot = CurrentState.Clone();
+             }
+
+             snapshot.DebugPublishUtc = DateTime.UtcNow;
+             OnDataUpdated?.Invoke(snapshot);
+         }*/
+
         private void PublishState()
         {
-            if ((DateTime.UtcNow - _lastUiUpdate).TotalMilliseconds < 100)
-                return;
+            DroneState snapshot;
+            lock (_stateLock)
+            {
+                snapshot = CurrentState.Clone();
+            }
 
-            _lastUiUpdate = DateTime.UtcNow;
-
-            var snapshot = CurrentState.Clone();
             snapshot.DebugPublishUtc = DateTime.UtcNow;
-
             OnDataUpdated?.Invoke(snapshot);
         }
         #endregion
@@ -70,7 +90,7 @@ namespace GCS_Project.xServices
         /// <summary>
         /// MAVLink 프로토콜과 UDP 라우터를 초기화하여 기체를 탐색하고, 연결이 완료되면 데이터 스트림을 활성화합니다.
         /// </summary>
-        public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14550, string droneIp = "192.168.0.72")
+        public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14600, string droneIp = "192.168.0.25")
         {
             if (_router != null) return;
 
@@ -201,7 +221,12 @@ namespace GCS_Project.xServices
             _cts?.Dispose();
             _cts = null;
 
-            CurrentState.IsConnected = false;
+            //CurrentState.IsConnected = false;
+            //디버깅용
+            lock (_stateLock)
+            {
+                CurrentState.IsConnected = false;
+            }
             PublishState();
             OnLogReceived?.Invoke("[MAV] 연결 종료됨");
         }
@@ -234,7 +259,12 @@ namespace GCS_Project.xServices
                 _lastHeartbeatUtc = DateTime.MinValue;
                 _linkWatchdogTask = null;
 
-                CurrentState.IsConnected = false;
+                //CurrentState.IsConnected = false;
+                // 디버깅용
+                lock (_stateLock)
+                {
+                    CurrentState.IsConnected = false;
+                }
             }
             catch
             {
