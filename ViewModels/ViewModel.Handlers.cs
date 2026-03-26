@@ -211,22 +211,27 @@ namespace GCS_Project.ViewModels
         {
             state.DebugHandleUtc = DateTime.UtcNow;
 
-            if (!state.IsConnected) return;
-            if (state.Latitude == 0 && state.Longitude == 0) return;
-
             lock (_telemetryUiLock)
             {
+                // 연결 여부와 상관없이 최신 HUD 상태는 항상 저장
                 _latestHudState = state.Clone();
 
-                _latestMapLat = state.Latitude;
-                _latestMapLng = state.Longitude;
-                _latestMapHeading = state.Yaw;
+                // 지도용 좌표는 유효할 때만 갱신
+                if (!(state.Latitude == 0 && state.Longitude == 0))
+                {
+                    _latestMapLat = state.Latitude;
+                    _latestMapLng = state.Longitude;
+                    _latestMapHeading = state.Yaw;
+                }
 
+                // 이륙 지점 최신값 저장
                 _latestTakeoffLat = state.TakeoffLat;
                 _latestTakeoffLng = state.TakeoffLng;
 
+                // 배터리 경고 여부 저장
                 _latestBatteryWarning = state.BatteryPercent > 0 && state.BatteryPercent <= 20;
 
+                // 비행 상태 저장
                 if (state.Altitude > 1.0)
                 {
                     _isFlyingHigh = true;
@@ -249,7 +254,6 @@ namespace GCS_Project.ViewModels
             }
 
             if (!state.IsConnected) return;
-            if (state.Latitude == 0 && state.Longitude == 0) return;
 
             if (_uiDrone.Altitude != state.Altitude) _uiDrone.Altitude = state.Altitude;
             if (_uiDrone.Speed != state.Speed) _uiDrone.Speed = state.Speed;
