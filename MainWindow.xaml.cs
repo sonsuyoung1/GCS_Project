@@ -1,13 +1,18 @@
-﻿using GCS_Project.Models;
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.ComponentModel;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+
+using GCS_Project.Models;
 using GCS_Project.Services;
 using GCS_Project.ViewModels;
-using LibVLCSharp.Shared;
-using LibVLCSharp.WPF;
-using Microsoft.Web.WebView2.Core;
-using System;
-using System.IO;
-using System.Windows;
 
+using LibVLCSharp.Shared;
+using Microsoft.Web.WebView2.Core;
 
 namespace GCS_Project
 {
@@ -15,11 +20,14 @@ namespace GCS_Project
     {
         #region [1. 필드 (Fields)]
         private MapController? _mapController;
-        private MainViewModel? _viewModel;
+        private ViewModel? _viewModel;
         private LibVLC? _libVLC;
-        private MediaPlayer? _mp1;
-        private MediaPlayer? _mp2;
-        private MediaPlayer? _mp3;
+        private LibVLCSharp.Shared.MediaPlayer? _mp1;
+        private OverlayWindow? _overlayWindow;
+        private bool _mapBridgeInitialized = false;
+        // ===== Video Frame Size (YOLO 입력 해상도) =====
+        private const double FRAME_WIDTH = 1920.0;
+        private const double FRAME_HEIGHT = 1080.0;
 
         private bool _overlayDirty = false;
         private System.Windows.Threading.DispatcherTimer? _overlayTimer;
@@ -30,69 +38,62 @@ namespace GCS_Project
         private double _pendingMapLat;
         private double _pendingMapLng;
         private double _pendingMapHeading;
-        private const int MaxOverlayBoxes = 20;
-        private readonly List<System.Windows.Shapes.Rectangle> _bboxRects = new();
-        private readonly List<TextBlock> _bboxLabels = new();
-        private bool _overlayPoolInitialized = false;
-        private System.Windows.Threading.DispatcherTimer? _debugHudTimer;// 디버깅용
         #endregion
+
 
         #region [2. 생성자 (Constructor)]
         public MainWindow()
         {
             InitializeComponent(); // XAML으로 UI구현한 것을 실제 메모리에 올리고 조립.
 
+            _viewModel = new ViewModel();
+            this.DataContext = _viewModel;
+
+            _viewModel.DetectedTargets.CollectionChanged += (s, e) =>
+            {
+                _overlayDirty = true;
+            };
+
+            _overlayTimer = new System.Windows.Threading.DispatcherTimer();
+            _overlayTimer.Interval = TimeSpan.FromMilliseconds(100);
+            //나중에 최적화
+            _overlayTimer.Tick += (s, e) =>
+            {
+                if (_overlayDirty)
+                {
+                    RedrawBboxes();
+                    _overlayDirty = false;
+                }
+            };
+            _overlayTimer.Start();
+
             // ===== [VIDEO INIT] =====
             Core.Initialize();
             _libVLC = new LibVLC("--network-caching=100");
 
-            // 각 VideoView에 플레이어 연결
-            _mp1 = new MediaPlayer(_libVLC);
-            _mp2 = new MediaPlayer(_libVLC);
-            _mp3 = new MediaPlayer(_libVLC);
-
+            // VideoView에 플레이어 연결
+            _mp1 = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
             VideoView1.MediaPlayer = _mp1;
-            VideoView2.MediaPlayer = _mp2;
-            VideoView3.MediaPlayer = _mp3;
 
-            // =========================
-            // DataContext가 바뀔 때 ViewModel 참조 업데이트
-            this.DataContextChanged += (s, e) =>
-            {
-                if (this.DataContext is MainViewModel vm) // datecontext가 mainviewmodel인지 확인 하고 맞으면 _viewmodel에 저장.
-                    _viewModel = vm;
-            };
+            this.Loaded += MainWindow_Loaded;
 
             this.LocationChanged += MainWindow_WindowChanged;
             this.SizeChanged += MainWindow_WindowChanged;
             this.StateChanged += MainWindow_WindowChanged;
             this.Closing += MainWindow_Closing;
 
-            //디버깅용
-            _debugHudTimer = new System.Windows.Threading.DispatcherTimer();
-            _debugHudTimer.Interval = TimeSpan.FromMilliseconds(100);
-            _debugHudTimer.Tick += (s, e) =>
-            {
-                if (_viewModel != null)
-                {
-                    var now = DateTime.UtcNow;
-                    var processAge = (now - _viewModel.LastProcessUtc).TotalMilliseconds;
-                    var applyAge = (now - _viewModel.LastApplyUtc).TotalMilliseconds;
-
-                    this.Title =
-                        $"ALT={_viewModel.Drone.Altitude:F2}, " +
-                        $"P={processAge:F0}ms, A={applyAge:F0}ms";
-                }
-            };
-            _debugHudTimer.Start();
         }
         #endregion
+
 
         #region [3. 초기화 (Initialization)]
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             if (_viewModel == null)
+            {
+                MessageBox.Show("ViewModel(DataContext) 연결이 안 됨");
                 return;
+            }
 
             await InitializeMapAsync();
 
@@ -106,7 +107,6 @@ namespace GCS_Project
             _overlayWindow.Show();
 
             HookOverlayEvents();
-            InitializeOverlayPool();
 
             UpdateOverlayBounds();
 
@@ -120,11 +120,41 @@ namespace GCS_Project
         {
             try
             {
-                // 1. WebView2 및 MapController 초기화
-                await mapWebView.EnsureCoreWebView2Async(null);
+                // 1. 중복 초기화 방지 체크
+                if (mapWebView.CoreWebView2 != null) return;
+
+                // 2. 환경 설정 (한 번만 수행)
+                // 사용자 데이터 폴더를 명시적으로 지정하면 안정성이 올라갑니다 (null 대신 경로 지정 가능)
+                var options = new CoreWebView2EnvironmentOptions();
+                var env = await CoreWebView2Environment.CreateAsync(null, null, options);
+
+                // 3. 비동기 초기화 시작
+                await mapWebView.EnsureCoreWebView2Async(env);
+
+                // 4. 초기화 성공 후 설정 (이 순서가 매우 중요합니다!)
+                // 배경 투명 설정
+                mapWebView.DefaultBackgroundColor = System.Drawing.Color.Transparent;
                 _mapController = new MapController(mapWebView);
 
-                // 2. 지도 HTML 로드
+                // 5. 지도가 완전히 로드되었을 때 이벤트를 연결하도록 타이밍 변경!
+                mapWebView.NavigationCompleted += (s, args) =>
+                {
+                    if (args.IsSuccess)
+                    {
+                        // 지도가 100% 켜졌을 때만 C#과 JS 브릿지 연결
+                        InitializeMapBridge();
+                        //System.Diagnostics.Debug.WriteLine("[시스템] 지도 로딩 완료 및 브릿지 연결 성공!");
+                    }
+                    else
+                    {
+                        //System.Diagnostics.Debug.WriteLine($"[시스템] 지도 로딩 실패: {args.WebErrorStatus}");
+                    }
+                };
+
+                // 6. 브릿지 메시지 설정 (이건 밖에서 미리 등록해도 괜찮습니다)
+                mapWebView.WebMessageReceived += OnWebMessageReceived;
+
+                // 7. 지도 HTML 로드 명령 (마지막에 실행!)
                 string mapPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "map.html");
                 if (File.Exists(mapPath))
                 {
@@ -147,13 +177,24 @@ namespace GCS_Project
             RedrawBboxes();
         }
 
-                // 3. 뷰모델과 지도를 연결 (브릿지 설정)
-                InitializeMapBridge();
+        private void MainWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            if (_overlayWindow != null)
+            {
+                _overlayWindow.Close();
+                _overlayWindow = null;
+            }
+        }
 
-                // 4. 지도에서 보낸 메시지 수신 설정
-                mapWebView.WebMessageReceived += OnWebMessageReceived;
+        private void UpdateOverlayBounds()
+        {
+            if (_overlayWindow == null) return;
+            if (!IsLoaded) return;
 
-                PlayRtpStream(_mp1);
+            if (WindowState == WindowState.Minimized)
+            {
+                _overlayWindow.Hide();
+                return;
             }
 
             if (!_overlayWindow.IsVisible)
@@ -181,43 +222,8 @@ namespace GCS_Project
             _overlayWindow.OverlayCanvasControl.SizeChanged += OverlayCanvas_SizeChanged;
             _overlayWindow.OverlayCanvasControl.MouseLeftButtonDown += OverlayCanvas_MouseLeftButtonDown;
         }
-        //03/26
-        private void InitializeOverlayPool()
-        {
-            if (_overlayWindow == null) return;
-            if (_overlayPoolInitialized) return;
-
-            var canvas = _overlayWindow.OverlayCanvasControl;
-
-            for (int i = 0; i < MaxOverlayBoxes; i++)
-            {
-                var rect = new System.Windows.Shapes.Rectangle
-                {
-                    Visibility = Visibility.Collapsed,
-                    StrokeThickness = 2,
-                    Fill = System.Windows.Media.Brushes.Transparent,
-                    IsHitTestVisible = false
-                };
-
-                var label = new TextBlock
-                {
-                    Visibility = Visibility.Collapsed,
-                    Foreground = System.Windows.Media.Brushes.Yellow,
-                    FontSize = 12,
-                    Background = System.Windows.Media.Brushes.Black,
-                    IsHitTestVisible = false
-                };
-
-                _bboxRects.Add(rect);
-                _bboxLabels.Add(label);
-
-                canvas.Children.Add(rect);
-                canvas.Children.Add(label);
-            }
-
-            _overlayPoolInitialized = true;
-        }
         #endregion
+
 
         #region [4. 브릿지: ViewModel -> Map (Event Subscriptions)]
         /// <summary>
@@ -226,46 +232,173 @@ namespace GCS_Project
         private void InitializeMapBridge()
         {
             if (_viewModel == null || _mapController == null) return;
+            if (_mapBridgeInitialized) return;
 
-            // 1. 드론 실시간 위치 업데이트
-            _viewModel.PositionUpdated += (lat, lng) =>
+            _mapBridgeInitialized = true;
+
+            // 1. 드론 실시간 위치 업데이트 (single-flight)
+            _viewModel.PositionUpdated += (lat, lng, heading) =>
             {
-                _ = _mapController.UpdateDroneLocation(lat, lng);
+                _pendingMapLat = lat;
+                _pendingMapLng = lng;
+                _pendingMapHeading = heading;
+                _mapPending = true;
+
+                if (_mapUpdating) return;
+
+                _mapUpdating = true;
+
+                Dispatcher.InvokeAsync(async () =>
+                {
+                    try
+                    {
+                        while (_mapPending)
+                        {
+                            _mapPending = false;
+
+                            double latNow = _pendingMapLat;
+                            double lngNow = _pendingMapLng;
+                            double headingNow = _pendingMapHeading;
+
+                            if (_mapController != null)
+                            {
+                                await _mapController.UpdateDroneLocation(latNow, lngNow, headingNow);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        _mapUpdating = false;
+                    }
+                });
             };
 
             // 2. 이륙 지점 마커 설정
             _viewModel.TakeoffPointSet += (lat, lng) =>
             {
-                _ = _mapController.AddTakeoffMarker(lat, lng);
-            };
-
-            // 3. YOLO 다중 타겟 실시간 업데이트 및 이동
-            // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.
-            _viewModel.MavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
-            {
-                Dispatcher.Invoke(async () =>
+                Dispatcher.InvokeAsync(async () =>
                 {
-                    await _mapController.UpdateTargetOnMap(id, lat, lng, type, isTracked);
+                    if (_mapController != null)
+                    {
+                        await _mapController.AddTakeoffMarker(lat, lng);
+                    }
                 });
             };
 
-            // 4. 경로(웨이포인트) 관리
+            // 3. 경로(웨이포인트) 관리
             _viewModel.UndoWaypointRequested += async () =>
-                await _mapController.UndoLastWaypointOnMap();
+            {
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    await _mapController.UndoLastWaypointOnMap();
+                });
+            };
 
             _viewModel.ClearWaypointsRequested += async () =>
             {
-                await _mapController.ClearAllWaypointsOnMap();
-                await mapWebView.ExecuteScriptAsync("clearAllMapElements()");
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    if (_mapController != null)
+                    {
+                        await _mapController.ClearAllWaypointsOnMap();
+                    }
+                });
+            };
+
+            _viewModel.AllClearRequested += async () =>
+            {
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    await _mapController.ClearAllOnMap();
+                    await mapWebView.ExecuteScriptAsync("clearAllMapElements()");
+                });
             };
         }
         #endregion
 
-        #region [5. 이벤트 핸들러 (Event Handlers)]
+
+        #region [ 5. 수동 조종 (Manual Control) 변수 및 이벤트]
+
+        // 현재 조이스틱 상태를 기억할 변수 (Z:500은 제자리 고도 유지, 나머지는 0이 정지)
+        private short _joyPitch = 0;   // W, S
+        private short _joyRoll = 0;    // A, D
+        private short _joyThrust = 500;// Up, Down
+        private short _joyYaw = 0;     // Left, Right
+
+        // 1. 수동 조종 모드 켜기 (버튼 눌림)
+        private void ManualModeToggle_Checked(object sender, RoutedEventArgs e)
+        {
+            _viewModel?.ToggleManualControl(true);
+        }
+
+        // 2. 수동 조종 모드 끄기 (버튼 해제)
+        private void ManualModeToggle_Unchecked(object sender, RoutedEventArgs e)
+        {
+            _viewModel?.ToggleManualControl(false);
+        }
+
+        // 3. 키보드를 눌렀을 때 (가속 페달 밟기)
+        private void Window_KeyDown(object sender, KeyEventArgs e)
+        {
+            // 꿀팁: 꾹 누르고 있을 때 이벤트가 수십 번 중복 발생하는 것을 막아줍니다!
+            if (e.IsRepeat) return;
+
+            bool isChanged = false;
+
+            switch (e.Key)
+            {
+                case Key.W: _joyPitch = 1000; isChanged = true; break;  // 전진
+                case Key.S: _joyPitch = -1000; isChanged = true; break; // 후진
+                case Key.A: _joyRoll = -1000; isChanged = true; break;  // 좌측 이동
+                case Key.D: _joyRoll = 1000; isChanged = true; break;   // 우측 이동
+
+                case Key.Up: _joyThrust = 1000; isChanged = true; break;  // 상승
+                case Key.Down: _joyThrust = 0; isChanged = true; break;   // 하강
+
+                case Key.Left: _joyYaw = -1000; isChanged = true; break;  // 좌회전
+                case Key.Right: _joyYaw = 1000; isChanged = true; break;  // 우회전
+            }
+
+            // 값이 바뀌었으면 뷰모델로 전송!
+            if (isChanged)
+            {
+                _viewModel?.UpdateJoystick(_joyPitch, _joyRoll, _joyThrust, _joyYaw);
+            }
+        }
+
+        // 4. 키보드에서 손을 뗐을 때 (브레이크 밟기 - 제자리 복귀)
+        private void Window_KeyUp(object sender, KeyEventArgs e)
+        {
+            bool isChanged = false;
+
+            switch (e.Key)
+            {
+                case Key.W:
+                case Key.S: _joyPitch = 0; isChanged = true; break; // 전후진 멈춤
+
+                case Key.A:
+                case Key.D: _joyRoll = 0; isChanged = true; break;  // 좌우 멈춤
+
+                case Key.Up:
+                case Key.Down: _joyThrust = 500; isChanged = true; break; // 고도 유지 (Hovering)
+
+                case Key.Left:
+                case Key.Right: _joyYaw = 0; isChanged = true; break; // 회전 멈춤
+            }
+
+            if (isChanged)
+            {
+                _viewModel?.UpdateJoystick(_joyPitch, _joyRoll, _joyThrust, _joyYaw);
+            }
+        }
+        #endregion
+
+
+        #region [6. 이벤트 핸들러 (Event Handlers)]
         /// <summary>
         /// 지도(JS)에서 클릭하여 발생한 이벤트를 C# ViewModel로 전달합니다.
         /// </summary>
-        private void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs args)
+        private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
         {
             if (_viewModel == null)
                 return;
@@ -281,15 +414,15 @@ namespace GCS_Project
                 {
                     double lat = root.GetProperty("lat").GetDouble();
                     double lng = root.GetProperty("lng").GetDouble();
+
                     _viewModel.AddWaypointFromMap(lat, lng);
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[JS Bridge Error] {ex.Message}");
+                //System.Diagnostics.Debug.WriteLine($"[JS Bridge Error] {ex.Message}");
             }
         }
-        #endregion
 
         private void PlayLocalFile(MediaPlayer? mp, string fileName)
         {
@@ -303,7 +436,7 @@ namespace GCS_Project
                 return;
             }
 
-            using var media = new Media(_libVLC, new Uri(path));
+            using var media = new LibVLCSharp.Shared.Media(_libVLC, new Uri(path));
             mp.Play(media);
         }
 
@@ -311,8 +444,8 @@ namespace GCS_Project
         {
             if (mp == null || _libVLC == null) return;
 
-            string sdpPath = @"C:\Users\LAAA\Desktop\stream.sdp";
-
+            string sdpPath = @"C:\Users\82106\OneDrive\바탕 화면\stream.sdp";
+            //string sdpPath = @"C:\Users\LAAA\Desktop\stream.sdp";
             if (!File.Exists(sdpPath))
             {
                 MessageBox.Show($"SDP 파일 없음: {sdpPath}");
@@ -327,20 +460,26 @@ namespace GCS_Project
         {
             try
             {
-                _mp1?.Stop(); _mp2?.Stop(); _mp3?.Stop();
-                _mp1?.Dispose(); _mp2?.Dispose(); _mp3?.Dispose();
+                _overlayTimer?.Stop();
+                _overlayTimer = null;
+
+                _overlayWindow?.Close();
+                _overlayWindow = null;
+
+                _viewModel?.Dispose();
+
+                _mp1?.Stop();
+                _mp1?.Dispose();
                 _libVLC?.Dispose();
             }
             catch { }
+
             base.OnClosed(e);
-            //디버깅용
-            _debugHudTimer?.Stop();
-            _debugHudTimer = null;
         }
         //03/08 수정 
         private void OverlayCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            _overlayDirty = true;
+            RedrawBboxes();
         }
 
         // 영상 위 클릭
@@ -444,17 +583,14 @@ namespace GCS_Project
             if (_viewModel == null || _overlayWindow == null)
                 return;
 
-            if (!_overlayPoolInitialized)
-                return;
-
             var canvas = _overlayWindow.OverlayCanvasControl;
+            canvas.Children.Clear();
 
             double canvasW = canvas.ActualWidth;
             double canvasH = canvas.ActualHeight;
 
             if (canvasW <= 1 || canvasH <= 1)
                 return;
-
             // 객체 사라지면 선택 초기화
             if (_selectedTargetId.HasValue)
             {
@@ -466,19 +602,8 @@ namespace GCS_Project
                 }
             }
 
-            int drawCount = Math.Min(_viewModel.DetectedTargets.Count, MaxOverlayBoxes);
-
-            // 먼저 전부 숨김
-            for (int i = 0; i < MaxOverlayBoxes; i++)
+            foreach (var t in _viewModel.DetectedTargets)
             {
-                _bboxRects[i].Visibility = Visibility.Collapsed;
-                _bboxLabels[i].Visibility = Visibility.Collapsed;
-            }
-
-            for (int i = 0; i < drawCount; i++)
-            {
-                var t = _viewModel.DetectedTargets[i];
-
                 double leftF = t.Bx - (t.Bw / 2.0);
                 double topF = t.By - (t.Bh / 2.0);
                 double rightF = t.Bx + (t.Bw / 2.0);
@@ -505,23 +630,32 @@ namespace GCS_Project
 
                 bool selected = (_selectedTargetId.HasValue && t.ID == _selectedTargetId.Value);
 
-                var rect = _bboxRects[i];
-                rect.Width = rectWidth;
-                rect.Height = rectHeight;
-                rect.StrokeThickness = selected ? 3 : 2;
-                rect.Stroke = selected
-                    ? System.Windows.Media.Brushes.Red
-                    : System.Windows.Media.Brushes.Lime;
+                var rect = new System.Windows.Shapes.Rectangle
+                {
+                    Width = rectWidth,
+                    Height = rectHeight,
+                    StrokeThickness = selected ? 3 : 2,
+                    Stroke = selected
+                        ? System.Windows.Media.Brushes.Red
+                        : System.Windows.Media.Brushes.Lime,
+                    Fill = System.Windows.Media.Brushes.Transparent
+                };
 
                 Canvas.SetLeft(rect, rectLeft);
                 Canvas.SetTop(rect, rectTop);
-                rect.Visibility = Visibility.Visible;
+                canvas.Children.Add(rect);
 
-                var label = _bboxLabels[i];
-                label.Text = $"ID:{t.ID} {t.TargetType}";
+                var label = new TextBlock
+                {
+                    Text = $"ID:{t.ID} {t.TargetType}",
+                    Foreground = System.Windows.Media.Brushes.Yellow,
+                    FontSize = 12,
+                    Background = System.Windows.Media.Brushes.Black
+                };
+
                 Canvas.SetLeft(label, rectLeft);
                 Canvas.SetTop(label, Math.Max(0, rectTop - 20));
-                label.Visibility = Visibility.Visible;
+                canvas.Children.Add(label);
             }
         }
         //ai 엔터 커멘드 03/16 추가
@@ -538,5 +672,8 @@ namespace GCS_Project
                 _viewModel.SendAICommand.Execute(null);
             }
 
+            e.Handled = true;
+        }
+        #endregion
     }
 }
