@@ -166,7 +166,7 @@ namespace GCS_Project
                     await _mapController.ClearAllOnMap();
                 });
             };
-            
+
 
             /*// 4. YOLO 다중 타겟 실시간 업데이트 및 이동
             // 서비스의 이벤트를 직접 구독하여 가장 빠른 반응 속도를 보장합니다.
@@ -178,7 +178,21 @@ namespace GCS_Project
                 });
             };*/
 
+            _viewModel.HistoryPathRequested += (path) =>
+            {
+                // UI 스레드에서 실행되도록 Dispatcher 사용
+                Dispatcher.InvokeAsync(async () =>
+                {
+                    if (_mapController != null)
+                    {
+                        // MapController를 통해 자바스크립트 drawFlightPath 호출
+                        await _mapController.DrawHistoryPath(path);
 
+                        // 디버그 창에 결과 출력 (확인용)
+                        System.Diagnostics.Debug.WriteLine($"[지도] {path.Count}개의 좌표로 궤적을 그렸습니다.");
+                    }
+                });
+            };
         }
         #endregion
 

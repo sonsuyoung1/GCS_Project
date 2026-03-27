@@ -77,5 +77,16 @@ namespace GCS_Project.Services
             if (_webView != null && _webView.CoreWebView2 != null)
                 await _webView.ExecuteScriptAsync($"map.panTo(new L.LatLng({lat}, {lng}))");
         }
+
+        // MapController.cs에 추가
+        public async Task DrawHistoryPath(List<Tuple<double, double>> path)
+        {
+            // C#의 좌표 리스트를 JS가 이해할 수 있는 [[lat, lng], ...] 형태의 JSON으로 변환
+            var jsonPath = System.Text.Json.JsonSerializer.Serialize(
+                path.Select(p => new double[] { p.Item1, p.Item2 })
+            );
+
+            await _webView.ExecuteScriptAsync($"drawFlightPath({jsonPath})");
+        }
     }
 }

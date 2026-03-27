@@ -1,14 +1,15 @@
 ﻿using Asv.Mavlink;
 using Asv.Mavlink.Minimal;
+using GCS_Project.Data;
 using GCS_Project.Models;
 using GCS_Project.xServices;
+using Newtonsoft.Json;
 using System;
 using System.Collections.ObjectModel;
-using System.Windows;
-using System.Windows.Input;
-using Newtonsoft.Json;
 using System.Net.Http;
 using System.Text;
+using System.Windows;
+using System.Windows.Input;
 
 namespace GCS_Project.ViewModels
 {
@@ -30,6 +31,8 @@ namespace GCS_Project.ViewModels
         private readonly List<GeoPoint> _waypoints = new List<GeoPoint>();
         private DateTime _lastMapUpdate = DateTime.MinValue;
         private string _userInputCommand = "";
+        private bool _isHistoryVisible = false;
+        private int _currentFlightId;
 
         private const string MODE_IDLE = "IDLE";
         private const string MODE_TAKEOFF = "TAKEOFF";
@@ -119,6 +122,7 @@ namespace GCS_Project.ViewModels
         public ICommand IncreaseSpeedCommand { get; }
         public ICommand DecreaseSpeedCommand { get; }
         public ICommand SendAICommand { get; }
+        public ICommand ShowHistoryCommand { get; }
         #endregion
 
 
@@ -129,6 +133,7 @@ namespace GCS_Project.ViewModels
         public event Action<double, double, double>? PositionUpdated;
         public event Action<double, double>? TakeoffPointSet;
         public event Action<double, double>? PersonDetectedOnMap;
+        public event Action<List<Tuple<double, double>>>? HistoryPathRequested;
         #endregion
 
 
@@ -150,6 +155,7 @@ namespace GCS_Project.ViewModels
             StopMissionCommand = new RelayCommand(ExecuteStopMission, () => IsStopEnabled);
             // StopTrackingCommand = new RelayCommand(ExecuteStopTracking, () => IsStopEnabled);
             SendAICommand = new RelayCommand(async () => await ExecuteSendAICommand());
+            ShowHistoryCommand = new RelayCommand(async () => await ExecuteShowHistory());
             IncreaseAltitudeCommand = new RelayCommand(async () =>
             {
                 if (Drone.TargetAltitude < 100)
@@ -227,10 +233,20 @@ namespace GCS_Project.ViewModels
 
             // 서비스 시작 및 이벤트 구독
             InitializeService();
+            InitializeFlightSession();
         }
         #endregion
 
-
+        private void InitializeFlightSession()
+        {
+            using (var db = new AppDbContext())
+            {
+                // DB에서 가장 큰 FlightId를 찾아 +1 합니다. 없으면 1부터 시작.
+                int lastId = db.FlightLogs.Any() ? db.FlightLogs.Max(x => x.FlightId) : 0;
+                _currentFlightId = lastId + 1;
+            }
+            System.Diagnostics.Debug.WriteLine($"[세션] 이번 비행 아이디는 {_currentFlightId}입니다.");
+        }
         public void Dispose()
         {
             _targetLostTimer?.Stop();
