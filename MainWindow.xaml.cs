@@ -21,7 +21,6 @@ namespace GCS_Project
         private MediaPlayer? _mp2;
         private MediaPlayer? _mp3;
 
-<<<<<<< HEAD
         private bool _overlayDirty = false;
         private System.Windows.Threading.DispatcherTimer? _overlayTimer;
 
@@ -36,8 +35,6 @@ namespace GCS_Project
         private readonly List<TextBlock> _bboxLabels = new();
         private bool _overlayPoolInitialized = false;
         private System.Windows.Threading.DispatcherTimer? _debugHudTimer;// 디버깅용
-=======
->>>>>>> 777f000fd4f2f748845bd5bca5bb3e8dabe1f404
         #endregion
 
         #region [2. 생성자 (Constructor)]
@@ -66,9 +63,6 @@ namespace GCS_Project
                     _viewModel = vm;
             };
 
-            this.Loaded += MainWindow_Loaded;
-<<<<<<< HEAD
-
             this.LocationChanged += MainWindow_WindowChanged;
             this.SizeChanged += MainWindow_WindowChanged;
             this.StateChanged += MainWindow_WindowChanged;
@@ -91,8 +85,6 @@ namespace GCS_Project
                 }
             };
             _debugHudTimer.Start();
-=======
->>>>>>> 777f000fd4f2f748845bd5bca5bb3e8dabe1f404
         }
         #endregion
 
@@ -102,7 +94,6 @@ namespace GCS_Project
             if (_viewModel == null)
                 return;
 
-<<<<<<< HEAD
             await InitializeMapAsync();
 
             PlayRtpStream(_mp1);
@@ -127,8 +118,6 @@ namespace GCS_Project
 
         private async Task InitializeMapAsync()
         {
-=======
->>>>>>> 777f000fd4f2f748845bd5bca5bb3e8dabe1f404
             try
             {
                 // 1. WebView2 및 MapController 초기화
@@ -141,6 +130,22 @@ namespace GCS_Project
                 {
                     mapWebView.Source = new Uri(mapPath);
                 }
+                else
+                {
+                    //System.Diagnostics.Debug.WriteLine("지도 파일을 찾을 수 없습니다: " + mapPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"지도 초기화 실패: {ex.Message}", "오류", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        // 아래부터 03/08 추가함
+        private void MainWindow_WindowChanged(object? sender, EventArgs e)
+        {
+            UpdateOverlayBounds();
+            RedrawBboxes();
+        }
 
                 // 3. 뷰모델과 지도를 연결 (브릿지 설정)
                 InitializeMapBridge();
@@ -149,38 +154,6 @@ namespace GCS_Project
                 mapWebView.WebMessageReceived += OnWebMessageReceived;
 
                 PlayRtpStream(_mp1);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"지도 초기화 실패: {ex.Message}", "오류", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-<<<<<<< HEAD
-        // 아래부터 03/08 추가함
-        private void MainWindow_WindowChanged(object? sender, EventArgs e)
-        {
-            UpdateOverlayBounds();
-            _overlayDirty = true;
-        }
-
-        private void MainWindow_Closing(object? sender, CancelEventArgs e)
-        {
-            if (_overlayWindow != null)
-            {
-                _overlayWindow.Close();
-                _overlayWindow = null;
-            }
-        }
-
-        private void UpdateOverlayBounds()
-        {
-            if (_overlayWindow == null) return;
-            if (!IsLoaded) return;
-
-            if (WindowState == WindowState.Minimized)
-            {
-                _overlayWindow.Hide();
-                return;
             }
 
             if (!_overlayWindow.IsVisible)
@@ -244,8 +217,6 @@ namespace GCS_Project
 
             _overlayPoolInitialized = true;
         }
-=======
->>>>>>> 777f000fd4f2f748845bd5bca5bb3e8dabe1f404
         #endregion
 
         #region [4. 브릿지: ViewModel -> Map (Event Subscriptions)]
@@ -366,7 +337,6 @@ namespace GCS_Project
             _debugHudTimer?.Stop();
             _debugHudTimer = null;
         }
-<<<<<<< HEAD
         //03/08 수정 
         private void OverlayCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         {
@@ -568,11 +538,5 @@ namespace GCS_Project
                 _viewModel.SendAICommand.Execute(null);
             }
 
-            e.Handled = true;
-        }
-        #endregion
-=======
-
->>>>>>> 777f000fd4f2f748845bd5bca5bb3e8dabe1f404
     }
 }
