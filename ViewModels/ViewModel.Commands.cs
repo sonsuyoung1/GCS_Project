@@ -1,4 +1,5 @@
 ﻿using Asv.Mavlink.Minimal;
+using GCS_Project.Data;
 using GCS_Project.Models;
 using GCS_Project.xServices;
 using Newtonsoft.Json;
@@ -9,6 +10,7 @@ using System.Net.Http;
 using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
 
 namespace GCS_Project.ViewModels
 {
@@ -213,6 +215,60 @@ namespace GCS_Project.ViewModels
             }
         }*/
 
+        private async Task ExecuteShowHistory()
+        {
+            // 1. 이미 궤적이 보이고 있다면? -> 지우기!
+            if (_isHistoryVisible)
+            {
+                _isHistoryVisible = false;
+                // 버튼 텍스트를 업데이트하고 싶다면 아래 주석 해제
+                // OnPropertyChanged(nameof(HistoryButtonText)); 
+
+                HistoryPathRequested?.Invoke(new List<Tuple<double, double>>());
+                Application.Current.Dispatcher.Invoke(() => ChatLog += "\n[시스템] 비행 궤적을 숨겼습니다.");
+                return;
+            }
+
+            try
+            {
+                Application.Current.Dispatcher.Invoke(() => ChatLog += "\n[시스템] DB 기록을 분석 중입니다...");
+
+                await Task.Run(() =>
+                {
+                    using (var db = new GCS_Project.Data.AppDbContext())
+                    {
+                        var logs = db.FlightLogs
+                                     .OrderByDescending(x => x.Timestamp)
+                                     .Take(500)
+                                     .ToList()
+                                     .OrderBy(x => x.Timestamp)
+                                     .ToList();
+
+                        if (logs.Count > 0)
+                        {
+                            var path = logs.Select(l => new Tuple<double, double>(l.Latitude, l.Longitude)).ToList();
+
+                            // ⭐ [핵심] 성공적으로 표시했다면 상태를 true로 바꿉니다!
+                            _isHistoryVisible = true;
+                            // OnPropertyChanged(nameof(HistoryButtonText));
+
+                            HistoryPathRequested?.Invoke(path);
+
+                            Application.Current.Dispatcher.Invoke(() => ChatLog += $"\n[성공] {logs.Count}개의 비행 궤적을 표시합니다.");
+                        }
+                        else
+                        {
+                            Application.Current.Dispatcher.Invoke(() => ChatLog += "\n[알림] 표시할 비행 기록이 없습니다.");
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DB 에러] {ex.Message}");
+                Application.Current.Dispatcher.Invoke(() => ChatLog += $"\n[에러] 데이터 변환 실패: {ex.Message}");
+            }
+        }
         private void NotifyCommandStates()
         {
             (StartMissionCommand as RelayCommand)?.NotifyCanExecuteChanged();

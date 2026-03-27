@@ -24,6 +24,7 @@ namespace GCS_Project.Data
     public class FlightLog
     {
         public int Id { get; set; } // 고유 번호 (자동 증가)
+        public int FlightId { get; set; }
         public DateTime Timestamp { get; set; } // 기록 시간
         public double Latitude { get; set; }
         public double Longitude { get; set; }

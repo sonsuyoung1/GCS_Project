@@ -320,6 +320,8 @@
                                           Style="{StaticResource GcsToggleButton}"
                                           Checked="ManualModeToggle_Checked" 
                                           Unchecked="ManualModeToggle_Unchecked"/>
+
+                    <Button Content="Show History"  Command="{Binding ShowHistoryCommand}" Background="#4A5568" Style="{StaticResource GcsButton}"/>
                 </UniformGrid>
 
                 <Border Grid.Row="2" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,10">

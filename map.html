@@ -120,7 +120,6 @@
             }
         }
 
-
         // --- [기능 2: 다중 타겟 관리 (YOLO ID 기반)] ---
         function updateTargetMarker(id, lat, lng, type, isTracked) {
             var iconHtml = isTracked ? `<div class="target-siren tracking-highlight">🚨</div>` : `<div class="target-siren">👤</div>`;
@@ -228,6 +227,35 @@
             // 타겟 마커들도 모두 제거
             Object.values(targetMarkers).forEach(m => map.removeLayer(m));
             targetMarkers = {};
+        }
+
+        // --- [기능 6: 비행 궤적(History) 그리기] ---
+        let historyPolyline = null; // 전역 변수로 선언하여 기존 선을 지울 수 있게 함
+
+        function drawFlightPath(locations) {
+            // locations 형식: [[lat, lng], [lat, lng], ...]
+
+            // 1. 기존에 그려진 궤적이 있다면 지도에서 제거
+            if (historyPolyline) {
+                map.removeLayer(historyPolyline);
+                historyPolyline = null; // 초기화
+            }
+
+            // 2. 좌표 데이터가 없으면 종료
+            if (!locations || locations.length === 0) return;
+
+            // 3. 새로운 빨간색 실선(Polyline) 생성
+            historyPolyline = L.polyline(locations, {
+                color: '#ff0000',      // 궤적 색상 (빨간색)
+                weight: 3,             // 선 두께
+                opacity: 0.6,          // 선 투명도
+                smoothFactor: 1        // 선 부드럽기 조절
+            }).addTo(map);
+
+            // 4. 궤적이 전체 다 보이도록 지도의 영역(Bounds)을 자동으로 맞춤
+            if (locations.length > 1) {
+                map.fitBounds(historyPolyline.getBounds(), { padding: [20, 20] });
+            }
         }
 
     </script>

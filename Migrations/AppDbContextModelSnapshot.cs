@@ -29,6 +29,9 @@ namespace GCS_Project.Migrations
                     b.Property<int>("BatteryPercent")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("FlightId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("FlightMode")
                         .IsRequired()
                         .HasColumnType("TEXT");
