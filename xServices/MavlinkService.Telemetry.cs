@@ -139,7 +139,7 @@ namespace GCS_Project.xServices
                             })
                             .AddTo(_subs);*/
             //디버깅용
-            _router!.OnRxMessage
+            /*_router!.OnRxMessage
                 .OfType<IProtocolMessage, GlobalPositionIntPacket>()
                 .Subscribe(packet =>
                 {
@@ -151,7 +151,28 @@ namespace GCS_Project.xServices
                         CurrentState.DebugRxUtc = now;
                         CurrentState.Latitude = packet.Payload.Lat / 1e7;
                         CurrentState.Longitude = packet.Payload.Lon / 1e7;
-                        CurrentState.Altitude = packet.Payload.RelativeAlt / 1000.0;
+                        //CurrentState.Altitude = packet.Payload.RelativeAlt / 1000.0;
+                    }
+                })
+                .AddTo(_subs);*/
+
+            _router!.OnRxMessage
+                .OfType<IProtocolMessage, GlobalPositionIntPacket>()
+                .Subscribe(packet =>
+                {
+                    var relAlt = packet.Payload.RelativeAlt / 1000.0;
+                    var lat = packet.Payload.Lat / 1e7;
+                    var lon = packet.Payload.Lon / 1e7;
+
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[GP-RAW] relAlt={relAlt:F2} lat={lat:F6} lon={lon:F6} t={DateTime.Now:HH:mm:ss.fff}");
+
+                    lock (_stateLock)
+                    {
+                        CurrentState.DebugRxUtc = DateTime.UtcNow;
+                        CurrentState.Latitude = lat;
+                        CurrentState.Longitude = lon;
+                        CurrentState.Altitude = relAlt;
                     }
                 })
                 .AddTo(_subs);
@@ -217,6 +238,22 @@ namespace GCS_Project.xServices
                         CurrentState.Roll = packet.Payload.Roll * (180.0 / Math.PI);
                         CurrentState.Pitch = packet.Payload.Pitch * (180.0 / Math.PI);
                         CurrentState.Yaw = (packet.Payload.Yaw * (180.0 / Math.PI) + 360) % 360;
+                    }
+                })
+                .AddTo(_subs);
+
+            _router!.OnRxMessage
+                .OfType<IProtocolMessage, LocalPositionNedPacket>()
+                .Subscribe(packet =>
+                {
+                    var localAlt = -packet.Payload.Z;
+
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[LPN-RAW] localAlt={localAlt:F2} t={DateTime.Now:HH:mm:ss.fff}");
+
+                    lock (_stateLock)
+                    {
+                        CurrentState.LocalAltitude = localAlt;
                     }
                 })
                 .AddTo(_subs);

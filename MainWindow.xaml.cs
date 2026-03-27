@@ -38,6 +38,11 @@ namespace GCS_Project
         private double _pendingMapLat;
         private double _pendingMapLng;
         private double _pendingMapHeading;
+        private const int MaxOverlayBoxes = 20;
+        private readonly List<System.Windows.Shapes.Rectangle> _bboxRects = new();
+        private readonly List<TextBlock> _bboxLabels = new();
+        private bool _overlayPoolInitialized = false;
+        private System.Windows.Threading.DispatcherTimer? _debugHudTimer;// 디버깅용
         #endregion
 
 
@@ -82,6 +87,23 @@ namespace GCS_Project
             this.StateChanged += MainWindow_WindowChanged;
             this.Closing += MainWindow_Closing;
 
+            //디버깅용
+            _debugHudTimer = new System.Windows.Threading.DispatcherTimer();
+            _debugHudTimer.Interval = TimeSpan.FromMilliseconds(100);
+            _debugHudTimer.Tick += (s, e) =>
+            {
+                if (_viewModel != null)
+                {
+                    var now = DateTime.UtcNow;
+                    var processAge = (now - _viewModel.LastProcessUtc).TotalMilliseconds;
+                    var applyAge = (now - _viewModel.LastApplyUtc).TotalMilliseconds;
+
+                    this.Title =
+                        $"ALT={_viewModel.Drone.Altitude:F2}, " +
+                        $"P={processAge:F0}ms, A={applyAge:F0}ms";
+                }
+            };
+            _debugHudTimer.Start();
         }
         #endregion
 
@@ -107,6 +129,7 @@ namespace GCS_Project
             _overlayWindow.Show();
 
             HookOverlayEvents();
+            InitializeOverlayPool();
 
             UpdateOverlayBounds();
 
@@ -174,7 +197,7 @@ namespace GCS_Project
         private void MainWindow_WindowChanged(object? sender, EventArgs e)
         {
             UpdateOverlayBounds();
-            RedrawBboxes();
+            _overlayDirty = true;
         }
 
         private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -221,6 +244,42 @@ namespace GCS_Project
 
             _overlayWindow.OverlayCanvasControl.SizeChanged += OverlayCanvas_SizeChanged;
             _overlayWindow.OverlayCanvasControl.MouseLeftButtonDown += OverlayCanvas_MouseLeftButtonDown;
+        }
+        //03/26
+        private void InitializeOverlayPool()
+        {
+            if (_overlayWindow == null) return;
+            if (_overlayPoolInitialized) return;
+
+            var canvas = _overlayWindow.OverlayCanvasControl;
+
+            for (int i = 0; i < MaxOverlayBoxes; i++)
+            {
+                var rect = new System.Windows.Shapes.Rectangle
+                {
+                    Visibility = Visibility.Collapsed,
+                    StrokeThickness = 2,
+                    Fill = System.Windows.Media.Brushes.Transparent,
+                    IsHitTestVisible = false
+                };
+
+                var label = new TextBlock
+                {
+                    Visibility = Visibility.Collapsed,
+                    Foreground = System.Windows.Media.Brushes.Yellow,
+                    FontSize = 12,
+                    Background = System.Windows.Media.Brushes.Black,
+                    IsHitTestVisible = false
+                };
+
+                _bboxRects.Add(rect);
+                _bboxLabels.Add(label);
+
+                canvas.Children.Add(rect);
+                canvas.Children.Add(label);
+            }
+
+            _overlayPoolInitialized = true;
         }
         #endregion
 
@@ -475,11 +534,14 @@ namespace GCS_Project
             catch { }
 
             base.OnClosed(e);
+            //디버깅용
+            _debugHudTimer?.Stop();
+            _debugHudTimer = null;
         }
         //03/08 수정 
         private void OverlayCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            RedrawBboxes();
+            _overlayDirty = true;
         }
 
         // 영상 위 클릭
@@ -583,14 +645,17 @@ namespace GCS_Project
             if (_viewModel == null || _overlayWindow == null)
                 return;
 
+            if (!_overlayPoolInitialized)
+                return;
+
             var canvas = _overlayWindow.OverlayCanvasControl;
-            canvas.Children.Clear();
 
             double canvasW = canvas.ActualWidth;
             double canvasH = canvas.ActualHeight;
 
             if (canvasW <= 1 || canvasH <= 1)
                 return;
+
             // 객체 사라지면 선택 초기화
             if (_selectedTargetId.HasValue)
             {
@@ -602,8 +667,19 @@ namespace GCS_Project
                 }
             }
 
-            foreach (var t in _viewModel.DetectedTargets)
+            int drawCount = Math.Min(_viewModel.DetectedTargets.Count, MaxOverlayBoxes);
+
+            // 먼저 전부 숨김
+            for (int i = 0; i < MaxOverlayBoxes; i++)
             {
+                _bboxRects[i].Visibility = Visibility.Collapsed;
+                _bboxLabels[i].Visibility = Visibility.Collapsed;
+            }
+
+            for (int i = 0; i < drawCount; i++)
+            {
+                var t = _viewModel.DetectedTargets[i];
+
                 double leftF = t.Bx - (t.Bw / 2.0);
                 double topF = t.By - (t.Bh / 2.0);
                 double rightF = t.Bx + (t.Bw / 2.0);
@@ -630,32 +706,23 @@ namespace GCS_Project
 
                 bool selected = (_selectedTargetId.HasValue && t.ID == _selectedTargetId.Value);
 
-                var rect = new System.Windows.Shapes.Rectangle
-                {
-                    Width = rectWidth,
-                    Height = rectHeight,
-                    StrokeThickness = selected ? 3 : 2,
-                    Stroke = selected
-                        ? System.Windows.Media.Brushes.Red
-                        : System.Windows.Media.Brushes.Lime,
-                    Fill = System.Windows.Media.Brushes.Transparent
-                };
+                var rect = _bboxRects[i];
+                rect.Width = rectWidth;
+                rect.Height = rectHeight;
+                rect.StrokeThickness = selected ? 3 : 2;
+                rect.Stroke = selected
+                    ? System.Windows.Media.Brushes.Red
+                    : System.Windows.Media.Brushes.Lime;
 
                 Canvas.SetLeft(rect, rectLeft);
                 Canvas.SetTop(rect, rectTop);
-                canvas.Children.Add(rect);
+                rect.Visibility = Visibility.Visible;
 
-                var label = new TextBlock
-                {
-                    Text = $"ID:{t.ID} {t.TargetType}",
-                    Foreground = System.Windows.Media.Brushes.Yellow,
-                    FontSize = 12,
-                    Background = System.Windows.Media.Brushes.Black
-                };
-
+                var label = _bboxLabels[i];
+                label.Text = $"ID:{t.ID} {t.TargetType}";
                 Canvas.SetLeft(label, rectLeft);
                 Canvas.SetTop(label, Math.Max(0, rectTop - 20));
-                canvas.Children.Add(label);
+                label.Visibility = Visibility.Visible;
             }
         }
         //ai 엔터 커멘드 03/16 추가

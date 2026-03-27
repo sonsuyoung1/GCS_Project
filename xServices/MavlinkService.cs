@@ -45,6 +45,7 @@ namespace GCS_Project.xServices
         private DateTime _lastRawLogUtc = DateTime.MinValue;
         private DateTime _lastRawGpUtc = DateTime.MinValue;
         private DateTime _lastRawAttUtc = DateTime.MinValue;
+        private long _altTraceSeq = 0;
         /* private void PublishState()
          {
              if ((DateTime.UtcNow - _lastUiUpdate).TotalMilliseconds < 100)
@@ -65,12 +66,19 @@ namespace GCS_Project.xServices
         private void PublishState()
         {
             DroneState snapshot;
+            long seq;
+
             lock (_stateLock)
             {
                 snapshot = CurrentState.Clone();
+                seq = _altTraceSeq;
             }
 
             snapshot.DebugPublishUtc = DateTime.UtcNow;
+
+            System.Diagnostics.Debug.WriteLine(
+                $"[ALT-2 PUB] seq={seq} alt={snapshot.Altitude:F2} t={DateTime.Now:HH:mm:ss.fff}");
+
             OnDataUpdated?.Invoke(snapshot);
         }
         #endregion
@@ -90,7 +98,11 @@ namespace GCS_Project.xServices
         /// <summary>
         /// MAVLink 프로토콜과 UDP 라우터를 초기화하여 기체를 탐색하고, 연결이 완료되면 데이터 스트림을 활성화합니다.
         /// </summary>
-        public async Task StartAsync(string listenHost = "0.0.0.0", int listenPort = 14600, string droneIp = "192.168.0.25")
+        public async Task StartAsync(
+            string listenHost = "0.0.0.0",
+            int listenPort = 14600,
+            string droneIp = "192.168.0.25",
+            int dronePort = 14551)
         {
             if (_router != null) return;
 
@@ -124,7 +136,7 @@ namespace GCS_Project.xServices
                 {
                     p.Scheme = "udp";
                     p.Host = droneIp;
-                    p.Port = 14551;
+                    p.Port = dronePort;
                     p.IsEnabled = true;
                     p.Name = "udp_out";
                 });

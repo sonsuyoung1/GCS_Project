@@ -13,6 +13,7 @@ namespace GCS_Project.Models
         private double _latitude;
         private double _longitude;
         private double _altitude;
+        private double _localAltitude;
         private double _speed;
         private bool _isConnected;
         private double? _takeoffLat;
@@ -37,6 +38,7 @@ namespace GCS_Project.Models
         public double Latitude { get => _latitude; set => SetProperty(ref _latitude, value); }
         public double Longitude { get => _longitude; set => SetProperty(ref _longitude, value); }
         public double Altitude { get => _altitude; set => SetProperty(ref _altitude, value); }
+        public double LocalAltitude { get => _localAltitude; set => SetProperty(ref _localAltitude, value); }
         public double Speed { get => _speed; set => SetProperty(ref _speed, value); }
         public bool IsConnected { get => _isConnected; set => SetProperty(ref _isConnected, value); }
         public double? TakeoffLat { get => _takeoffLat; set => SetProperty(ref _takeoffLat, value); }
@@ -68,6 +70,7 @@ namespace GCS_Project.Models
                 Latitude = this.Latitude,
                 Longitude = this.Longitude,
                 Altitude = this.Altitude,
+                LocalAltitude = this.LocalAltitude,
                 Speed = this.Speed,
                 IsConnected = this.IsConnected,
                 TakeoffLat = this.TakeoffLat,

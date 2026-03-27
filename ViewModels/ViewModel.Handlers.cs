@@ -141,22 +141,21 @@ namespace GCS_Project.ViewModels
             _mapUiTimer.Interval = TimeSpan.FromMilliseconds(100);
             _mapUiTimer.Tick += (s, e) =>
             {
-                double lat;
-                double lng;
-                double heading;
+                DroneState state;
                 double? takeoffLat;
                 double? takeoffLng;
 
                 lock (_telemetryUiLock)
                 {
-                    lat = _latestMapLat;
-                    lng = _latestMapLng;
-                    heading = _latestMapHeading;
+                    state = _latestHudState.Clone();
                     takeoffLat = _latestTakeoffLat;
                     takeoffLng = _latestTakeoffLng;
                 }
 
-                PositionUpdated?.Invoke(lat, lng, heading);
+                if (!(state.Latitude == 0 && state.Longitude == 0))
+                {
+                    PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
+                }
 
                 if (takeoffLat.HasValue && takeoffLng.HasValue && !_isTakeoffMarkerDrawn)
                 {
@@ -168,7 +167,7 @@ namespace GCS_Project.ViewModels
 
             try
             {
-                await _mavlinkService.StartAsync("0.0.0.0", 14600, "192.168.0.25");
+                await _mavlinkService.StartAsync("0.0.0.0", 14600, "192.168.0.25", 14551);
                 AppendLog("[시스템] MAVLink 연결 성공");
 
                 await _yoloMetaUdpService.StartAsync();
@@ -209,29 +208,29 @@ namespace GCS_Project.ViewModels
         //HandleDroneData() 를 두개로 나눠서 ui 스레드의 부담을 줄임
         private void ProcessTelemetryState(DroneState state)
         {
+            _lastProcessUtc = DateTime.UtcNow;
             state.DebugHandleUtc = DateTime.UtcNow;
+
+            System.Diagnostics.Debug.WriteLine(
+                $"[ALT-3 PRC] alt={state.Altitude:F2} localAlt={state.LocalAltitude:F2} " +
+                $"rx={state.DebugRxUtc:HH:mm:ss.fff} pub={state.DebugPublishUtc:HH:mm:ss.fff} " +
+                $"prc={DateTime.Now:HH:mm:ss.fff}");
 
             lock (_telemetryUiLock)
             {
-                // 연결 여부와 상관없이 최신 HUD 상태는 항상 저장
                 _latestHudState = state.Clone();
 
-                // 지도용 좌표는 유효할 때만 갱신
-                if (!(state.Latitude == 0 && state.Longitude == 0))
-                {
-                    _latestMapLat = state.Latitude;
-                    _latestMapLng = state.Longitude;
-                    _latestMapHeading = state.Yaw;
-                }
+                // 지금 형이 이미 테스트했다면 이 부분은 현재 코드 상태 그대로 두고 로그만 먼저 본다
+                // if (state.LocalAltitude > 0)
+                // {
+                //     _latestHudState.Altitude = state.LocalAltitude;
+                // }
 
-                // 이륙 지점 최신값 저장
                 _latestTakeoffLat = state.TakeoffLat;
                 _latestTakeoffLng = state.TakeoffLng;
 
-                // 배터리 경고 여부 저장
                 _latestBatteryWarning = state.BatteryPercent > 0 && state.BatteryPercent <= 20;
 
-                // 비행 상태 저장
                 if (state.Altitude > 1.0)
                 {
                     _isFlyingHigh = true;
@@ -246,6 +245,8 @@ namespace GCS_Project.ViewModels
 
         private void ApplyHudState()
         {
+            _lastApplyUtc = DateTime.UtcNow;
+
             DroneState state;
 
             lock (_telemetryUiLock)
@@ -254,6 +255,11 @@ namespace GCS_Project.ViewModels
             }
 
             if (!state.IsConnected) return;
+
+            System.Diagnostics.Debug.WriteLine(
+                $"[ALT-4 APP] srcAlt={state.Altitude:F2} uiBefore={_uiDrone.Altitude:F2} " +
+                $"rx={state.DebugRxUtc:HH:mm:ss.fff} pub={state.DebugPublishUtc:HH:mm:ss.fff} " +
+                $"app={DateTime.Now:HH:mm:ss.fff}");
 
             if (_uiDrone.Altitude != state.Altitude) _uiDrone.Altitude = state.Altitude;
             if (_uiDrone.Speed != state.Speed) _uiDrone.Speed = state.Speed;
