@@ -38,6 +38,7 @@ namespace GCS_Project.ViewModels
         private const string MODE_TAKEOFF = "TAKEOFF";
         private const string MODE_MISSION = "MISSION";
         private const string MODE_TRACKING = "TRACKING";
+        private const string MODE_HOLD = "HOLD";
         #endregion
 
 
@@ -89,18 +90,32 @@ namespace GCS_Project.ViewModels
         }
 
 
-        // 버튼 활성화 조건들 
-        // 버튼 활성화 조건들 (매직 스트링 제거 완벽 적용!)
-        public bool IsMissionStartEnabled => (FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && Drone.IsConnected && Drone.IsArmed;
-        public bool IsTakeoffEnabled => (FlightMode == MODE_IDLE) && Drone.IsConnected && Drone.IsArmed;
-        public bool IsLandingEnabled => (FlightMode == MODE_TAKEOFF && FlightMode != MODE_MISSION) && Drone.IsConnected && Drone.IsArmed;
-        public bool IsRtlEnabled => (FlightMode == MODE_TAKEOFF || FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING) && Drone.IsConnected && Drone.IsArmed;
-        public bool IsUndoEnabled => (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && FlightMode != MODE_MISSION;
-        public bool IsClearEnabled => (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && FlightMode != MODE_MISSION;
-        public bool IsFollowEnabled => SelectedTarget != null && (FlightMode != MODE_IDLE && FlightMode != MODE_TRACKING) && Drone.IsConnected && Drone.IsArmed;
-        public bool IsStopEnabled => (FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING);
+        // 버튼 활성화 조건
+        // 1. 시동 제어
         public bool IsArmEnabled => (FlightMode == MODE_IDLE) && Drone.IsConnected && !Drone.IsArmed;
-        public bool IsDisarmEnabled => FlightMode == MODE_IDLE && Drone.IsConnected && Drone.IsArmed;
+        public bool IsDisarmEnabled => (FlightMode == MODE_IDLE) && Drone.IsConnected && Drone.IsArmed;
+
+        // 2. 이륙: 땅에 있고(IDLE), 시동이 걸려 있을 때만 가능
+        public bool IsTakeoffEnabled => (FlightMode == MODE_IDLE) && Drone.IsConnected && Drone.IsArmed;
+
+        // 3. 미션 시작: 공중에 떠 있을 때(이륙 중이거나 제자리 비행 중) 웨이포인트가 있으면 가능
+        public bool IsMissionStartEnabled => (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD) && _currentWaypointCount > 0 && Drone.IsConnected && Drone.IsArmed;
+
+        // 4. 착륙: 공중에 떠 있을 때(미션 중이 아닐 때) 언제든 가능
+        public bool IsLandingEnabled => (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD) && Drone.IsConnected && Drone.IsArmed;
+
+        // 5. 복귀(RTL): 비행 중, 미션 중, 타격(추적) 중 언제라도 비상 호출 가능!
+        public bool IsRtlEnabled => (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD || FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING) && Drone.IsConnected && Drone.IsArmed;
+
+        // 6. 타겟 추적/타격 (Follow/Strike): 타겟이 선택되어 있고, 공중에 떠 있으며, 이미 타격 중이 아닐 때
+        public bool IsFollowEnabled => SelectedTarget != null && (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD || FlightMode == MODE_MISSION) && Drone.IsConnected && Drone.IsArmed;
+
+        // 7. 정지(Stop): 미션 중이거나 타격(추적) 중일 때 기체를 멈추고 HOLD 모드로 전환
+        public bool IsStopEnabled => (FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING) && Drone.IsConnected;
+
+        // 8. 웨이포인트 편집: 미션이나 타격 중이 아닐 때(대기, 이륙, 홀드 상태) 자유롭게 편집 가능
+        public bool IsUndoEnabled => (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD) && _currentWaypointCount > 0;
+        public bool IsClearEnabled => (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD) && _currentWaypointCount > 0;
         #endregion
 
 
@@ -116,7 +131,6 @@ namespace GCS_Project.ViewModels
         public ICommand ClearWaypointsCommand { get; }
         public ICommand FollowCommand { get; }
         // public ICommand StopTrackingCommand { get; }
-        // 고도, 속도 조절 명령
         public ICommand IncreaseAltitudeCommand { get; }
         public ICommand DecreaseAltitudeCommand { get; }
         public ICommand IncreaseSpeedCommand { get; }
@@ -142,6 +156,17 @@ namespace GCS_Project.ViewModels
         {
             _mavlinkService = new MavlinkService();
 
+            // MavlinkService가 드론 모드 변경을 감지하면 내 FlightMode를 업데이트!
+            _mavlinkService.OnFlightModeChanged += (newMode) =>
+            {
+                // UI 스레드에서 안전하게 업데이트 (WPF 특성상 Dispatcher 필요할 수 있음)
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    FlightMode = newMode; // SetProperty가 실행되면서 UI와 버튼 상태가 자동 갱신됨
+                    ChatLog += $"\n[시스템] 기체 비행 모드 변경 확인: {newMode}";
+                });
+            };
+
             // 커맨드 초기화 (로직 분리)
             StartMissionCommand = new RelayCommand(ExecuteStartMission, () => IsMissionStartEnabled);
             ArmCommand = new RelayCommand(ExecuteArm, () => IsArmEnabled);
@@ -162,8 +187,7 @@ namespace GCS_Project.ViewModels
                 {
                     Drone.TargetAltitude += 1.0;
 
-                    // 안전장치: 시동이 걸려있고 && TAKEOFF 모드일 때만 명령 전송!
-                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    if (Drone.IsArmed && (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD))
                     {
                         await _mavlinkService.ChangeTargetAltitude((float)Drone.TargetAltitude);
                     }
@@ -175,7 +199,7 @@ namespace GCS_Project.ViewModels
                 {
                     Drone.TargetAltitude -= 1.0;
 
-                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    if (Drone.IsArmed && (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD))
                     {
                         await _mavlinkService.ChangeTargetAltitude((float)Drone.TargetAltitude);
                     }
@@ -187,20 +211,19 @@ namespace GCS_Project.ViewModels
                 {
                     Drone.TargetSpeed += 1.0;
 
-                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    if (Drone.IsArmed && (FlightMode == MODE_TAKEOFF || FlightMode == MODE_MISSION))
                     {
                         await _mavlinkService.ChangeTargetSpeed((float)Drone.TargetSpeed);
                     }
                 }
             });
-
             DecreaseSpeedCommand = new RelayCommand(async () =>
             {
                 if (Drone.TargetSpeed > 1)
                 {
                     Drone.TargetSpeed -= 1.0;
 
-                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    if (Drone.IsArmed && (FlightMode == MODE_TAKEOFF || FlightMode == MODE_MISSION))
                     {
                         await _mavlinkService.ChangeTargetSpeed((float)Drone.TargetSpeed);
                     }
@@ -219,6 +242,7 @@ namespace GCS_Project.ViewModels
                 }
                 _targetLostTimer.Stop();
             };
+
 
             // 생성자 안에서 시계 타이머를 돌려줍니다.
             System.Windows.Threading.DispatcherTimer clockTimer = new System.Windows.Threading.DispatcherTimer();

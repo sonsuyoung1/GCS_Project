@@ -11,6 +11,7 @@ using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 
 namespace GCS_Project.ViewModels
 {
@@ -22,9 +23,8 @@ namespace GCS_Project.ViewModels
         {
             try
             {
-                // void 메서드이므로 Task.Run으로 감싸 UI 스레드 멈춤 완벽 방지!
+                // void 메서드이므로 Task.Run으로 감싸 UI 스레드 멈춤 완벽 방지
                 await Task.Run(() => _mavlinkService.StartMission());
-                FlightMode = MODE_MISSION;
                 ChatLog += "\n미션을 시작합니다.";
             }
             catch (Exception ex)
@@ -39,7 +39,6 @@ namespace GCS_Project.ViewModels
             try
             {
                 await Task.Run(() => _mavlinkService.StopMission());
-                FlightMode = MODE_TAKEOFF;
                 ChatLog += "\n미션을 중단했습니다.";
             }
             catch (Exception ex)
@@ -71,8 +70,6 @@ namespace GCS_Project.ViewModels
             {
                 await _mavlinkService.SendDisarmAsync();
                 ChatLog += "\n[명령] 시동 끄기(Disarm) 명령 전송 완료";
-
-                // (DisarmCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
             catch (Exception ex)
             {
@@ -86,7 +83,6 @@ namespace GCS_Project.ViewModels
             try
             {
                 await _mavlinkService.Takeoff((float)Drone.TargetAltitude);
-                FlightMode = MODE_TAKEOFF;
                 ChatLog += $"\n[명령] 이륙 명령 전송 (목표 고도: {Drone.TargetAltitude}m)";
 
                 if (Drone.Latitude != 0 && Drone.Longitude != 0)
@@ -106,7 +102,6 @@ namespace GCS_Project.ViewModels
             try
             {
                 await _mavlinkService.Landing();
-                FlightMode = MODE_IDLE;
 
                 await Task.Run(() => _mavlinkService.ClearWaypoints());
                 AllClearRequested?.Invoke();
@@ -188,8 +183,6 @@ namespace GCS_Project.ViewModels
 
                 await Task.Run(() => _mavlinkService.StopMission());
                 await _mavlinkService.GoTo(SelectedTarget.Lat, SelectedTarget.Lng, (float)Drone.TargetAltitude);
-
-                FlightMode = MODE_TRACKING;
                 ChatLog += $"\n[시스템] 타겟 추적 모드: ID {SelectedTarget.ID}";
             }
             catch (Exception ex)
@@ -281,7 +274,13 @@ namespace GCS_Project.ViewModels
             (UndoWaypointCommand as RelayCommand)?.NotifyCanExecuteChanged();
             (ClearWaypointsCommand as RelayCommand)?.NotifyCanExecuteChanged();
             (FollowCommand as RelayCommand)?.NotifyCanExecuteChanged();
+
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                CommandManager.InvalidateRequerySuggested();
+            });
         }
+
         #endregion
     }
 }

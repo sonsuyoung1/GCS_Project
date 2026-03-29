@@ -41,6 +41,7 @@ namespace GCS_Project.ViewModels
             _mavlinkService.OnDataUpdated += (state) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() => HandleDroneData(state));
+                NotifyCommandStates();
             };
 
             // 웨이포인트 개수 변화
@@ -210,23 +211,13 @@ namespace GCS_Project.ViewModels
         // 수동 조종 엔진 켜기/끄기
         public async void ToggleManualControl(bool turnOn)
         {
-            if (turnOn)
+            try
             {
-                // 1. 드론을 수동/포지션 모드(3)로 변경
-                await _mavlinkService.SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 3);
-                // 2. 가상 조이스틱 엔진 가동
-                _mavlinkService.StartManualControl();
-                // 3. UI 글자 업데이트
-                FlightMode = "MANUAL";
+                await _mavlinkService.SetManualControlModeAsync(turnOn);
             }
-            else
+            catch (Exception ex)
             {
-                // 1. 가상 조이스틱 엔진부터 확실하게 정지
-                _mavlinkService.StopManualControl();
-                // 2. 드론을 다시 컴퓨터가 조종하는 AUTO 모드(4)로 복귀!
-                await _mavlinkService.SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 4);
-                // 3. UI 글자 업데이트
-                FlightMode = "TAKEOFF";
+                ChatLog += $"\n[오류] 수동 모드 전환 실패: {ex.Message}";
             }
         }
 
