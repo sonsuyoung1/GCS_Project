@@ -185,24 +185,25 @@ namespace GCS_Project.xServices
                     {
                         _rawLat = lat;
                         _rawLon = lon;
-                        _rawRelAlt = relAlt;
+                        _rawRelAlt = relAlt;   
                         _rawGpUtc = now;
                         _rawGpSeq = seq;
                     }
 
                     Interlocked.Exchange(ref _latestSeq, seq);
 
-                    // 기존 CurrentState도 최소한 연결/다른 로직 때문에 남겨두고 싶으면 유지
                     lock (_stateLock)
                     {
                         CurrentState.DebugRxUtc = now;
                         CurrentState.Latitude = lat;
                         CurrentState.Longitude = lon;
-                        CurrentState.Altitude = relAlt;
+                        CurrentState.Altitude = relAlt;  
                     }
 
+                    PublishState();
+
                     System.Diagnostics.Debug.WriteLine(
-                        $"[GP-RX] seq={seq} relAlt={relAlt:F2} lat={lat:F6} lon={lon:F6} t={DateTime.Now:HH:mm:ss.fff}");
+                        $"[GP-RX] relAlt={relAlt:F2} t={DateTime.Now:HH:mm:ss.fff}");
                 })
                 .AddTo(_subs);
 
@@ -328,14 +329,6 @@ namespace GCS_Project.xServices
                     PublishState();
                 })
                 .AddTo(_subs);*/
-            //디버깅용
-            _uiUpdateTimer = Observable
-                 .Interval(TimeSpan.FromMilliseconds(100))
-                 .Subscribe(_ =>
-                 {
-                     PublishState();
-                 })
-                 .AddTo(_subs);
 
             /*_router!.OnRxMessage
                 .OfType<IProtocolMessage, LocalPositionNedPacket>()

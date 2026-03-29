@@ -155,11 +155,6 @@
                     </DataGrid>
                 </Grid>
             </Border>
-
-            <UniformGrid Grid.Row="2" Columns="2">
-                <Button Content="Start Track" Command="{Binding FollowCommand}" Background="#3B82F6" Style="{StaticResource GcsButton}"/>
-                <Button Content="Stop Track" Command="{Binding StopTrackingCommand}" Background="#64748B" Style="{StaticResource GcsButton}"/>
-            </UniformGrid>
         </Grid>
 
         <Grid Grid.Column="1">

@@ -62,7 +62,12 @@ namespace GCS_Project.ViewModels
 
             _mavlinkService.OnDataUpdated += (state) =>
             {
-                ProcessTelemetryState(state);
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    ApplyAllState(state);  
+                });
+
+                ProcessTelemetryState(state); 
             };
 
             _mavlinkService.OnWaypointCountChanged += (count) =>
@@ -120,51 +125,7 @@ namespace GCS_Project.ViewModels
 
                 ApplyDetectedTargets(snapshot);
             };
-            _targetUiTimer.Start();
-
-            _droneUiTimer = new System.Windows.Threading.DispatcherTimer();
-            _droneUiTimer.Interval = TimeSpan.FromMilliseconds(50);
-            _droneUiTimer.Tick += (s, e) =>
-            {
-                ApplyHudState();
-            };
-            _droneUiTimer.Start();
-
-            _statusUiTimer = new System.Windows.Threading.DispatcherTimer();
-            _statusUiTimer.Interval = TimeSpan.FromMilliseconds(200);
-            _statusUiTimer.Tick += (s, e) =>
-            {
-                ApplyStatusState();
-            };
-            _statusUiTimer.Start();
-
-            _mapUiTimer = new System.Windows.Threading.DispatcherTimer();
-            _mapUiTimer.Interval = TimeSpan.FromMilliseconds(100);
-            _mapUiTimer.Tick += (s, e) =>
-            {
-                DroneState state;
-                double? takeoffLat;
-                double? takeoffLng;
-
-                lock (_telemetryUiLock)
-                {
-                    state = _latestHudState.Clone();
-                    takeoffLat = _latestTakeoffLat;
-                    takeoffLng = _latestTakeoffLng;
-                }
-
-                if (!(state.Latitude == 0 && state.Longitude == 0))
-                {
-                    PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
-                }
-
-                if (takeoffLat.HasValue && takeoffLng.HasValue && !_isTakeoffMarkerDrawn)
-                {
-                    TakeoffPointSet?.Invoke(takeoffLat.Value, takeoffLng.Value);
-                    _isTakeoffMarkerDrawn = true;
-                }
-            };
-            _mapUiTimer.Start();
+            _targetUiTimer.Start();   
 
             try
             {
@@ -212,20 +173,9 @@ namespace GCS_Project.ViewModels
             _lastProcessUtc = DateTime.UtcNow;
             state.DebugHandleUtc = DateTime.UtcNow;
 
-            System.Diagnostics.Debug.WriteLine(
-                $"[ALT-3 PRC] alt={state.Altitude:F2} localAlt={state.LocalAltitude:F2} " +
-                $"rx={state.DebugRxUtc:HH:mm:ss.fff} pub={state.DebugPublishUtc:HH:mm:ss.fff} " +
-                $"prc={DateTime.Now:HH:mm:ss.fff}");
-
             lock (_telemetryUiLock)
             {
                 _latestHudState = state.Clone();
-
-                // 지금 형이 이미 테스트했다면 이 부분은 현재 코드 상태 그대로 두고 로그만 먼저 본다
-                // if (state.LocalAltitude > 0)
-                // {
-                //     _latestHudState.Altitude = state.LocalAltitude;
-                // }
 
                 _latestTakeoffLat = state.TakeoffLat;
                 _latestTakeoffLng = state.TakeoffLng;
@@ -244,6 +194,42 @@ namespace GCS_Project.ViewModels
             }
         }
 
+        private void ApplyAllState(DroneState state)
+        {
+            // ===== HUD =====
+            _uiDrone.Altitude = state.Altitude;
+            _uiDrone.Speed = state.Speed;
+            _uiDrone.Roll = state.Roll;
+            _uiDrone.Pitch = state.Pitch;
+            _uiDrone.Yaw = state.Yaw;
+
+            double newPitchOffset = state.Pitch * 3.55;
+            double newHeadingOffset = -state.Yaw;
+
+            if (PitchOffset != newPitchOffset) PitchOffset = newPitchOffset;
+            if (HeadingOffset != newHeadingOffset) HeadingOffset = newHeadingOffset;
+
+            // ===== STATUS (여기서만 상태 갱신) =====
+            _uiDrone.Latitude = state.Latitude;
+            _uiDrone.Longitude = state.Longitude;
+            _uiDrone.IsConnected = state.IsConnected;
+            _uiDrone.IsArmed = state.IsArmed;
+            _uiDrone.BatteryPercent = state.BatteryPercent;
+
+            // ===== MAP =====
+            if (!(state.Latitude == 0 && state.Longitude == 0))
+            {
+                PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
+            }
+
+            if (state.TakeoffLat.HasValue && state.TakeoffLng.HasValue && !_isTakeoffMarkerDrawn)
+            {
+                TakeoffPointSet?.Invoke(state.TakeoffLat.Value, state.TakeoffLng.Value);
+                _isTakeoffMarkerDrawn = true;
+            }
+            System.Diagnostics.Debug.WriteLine(
+                $"[UI-SET] alt={_uiDrone.Altitude:F2} spd={_uiDrone.Speed:F2} conn={_uiDrone.IsConnected} armed={_uiDrone.IsArmed} t={DateTime.Now:HH:mm:ss.fff}");
+        }
         private void ApplyHudState()
         {
             _lastApplyUtc = DateTime.UtcNow;
