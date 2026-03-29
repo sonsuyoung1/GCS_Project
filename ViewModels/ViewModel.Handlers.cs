@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Threading;
 
 namespace GCS_Project.ViewModels
 {
@@ -256,10 +257,19 @@ namespace GCS_Project.ViewModels
 
             if (!state.IsConnected) return;
 
+            Interlocked.Exchange(ref _appliedSeq, state.DebugSeq);
+
+            long latest = _mavlinkService.GetLatestSeq();
+            long applied = Interlocked.Read(ref _appliedSeq);
+            long backlog = latest - applied;
+
             System.Diagnostics.Debug.WriteLine(
+                $"[APP] latest={latest} applied={applied} backlog={backlog} alt={state.Altitude:F2} t={DateTime.Now:HH:mm:ss.fff}");
+
+            /*System.Diagnostics.Debug.WriteLine(
                 $"[ALT-4 APP] srcAlt={state.Altitude:F2} uiBefore={_uiDrone.Altitude:F2} " +
                 $"rx={state.DebugRxUtc:HH:mm:ss.fff} pub={state.DebugPublishUtc:HH:mm:ss.fff} " +
-                $"app={DateTime.Now:HH:mm:ss.fff}");
+                $"app={DateTime.Now:HH:mm:ss.fff}");*/
 
             if (_uiDrone.Altitude != state.Altitude) _uiDrone.Altitude = state.Altitude;
             if (_uiDrone.Speed != state.Speed) _uiDrone.Speed = state.Speed;

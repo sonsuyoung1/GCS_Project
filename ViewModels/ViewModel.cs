@@ -47,6 +47,7 @@ namespace GCS_Project.ViewModels
         private DateTime _lastApplyUtc = DateTime.MinValue;
         public DateTime LastProcessUtc => _lastProcessUtc;
         public DateTime LastApplyUtc => _lastApplyUtc;
+        private long _appliedSeq = 0;
         //버튼 상태에 영향을 주는 값만 따로 스냅샷으로 묶고, 그 스냅샷이 바뀔 때만 NotifyCommandStates()를 호출
         private sealed record CommandStateSnapshot(
             string FlightMode,
