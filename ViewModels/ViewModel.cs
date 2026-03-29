@@ -30,6 +30,8 @@ namespace GCS_Project.ViewModels
         private bool _isTakeoffMarkerDrawn = false;
         private readonly List<GeoPoint> _waypoints = new List<GeoPoint>();
         private DateTime _lastMapUpdate = DateTime.MinValue;
+        private readonly DateTime _programStartTime = DateTime.Now;
+        private DateTime? _selectedHistoryDate = DateTime.Today;
         private string _userInputCommand = "";
         private bool _isHistoryVisible = false;
         private int _currentFlightId;
@@ -88,7 +90,29 @@ namespace GCS_Project.ViewModels
             get => _headingOffset;
             set => SetProperty(ref _headingOffset, value);
         }
+        public DateTime? SelectedHistoryDate
+        {
+            get => _selectedHistoryDate;
+            set
+            {
+                if (SetProperty(ref _selectedHistoryDate, value))
+                {
+                    // 사용자가 달력에서 다른 날짜를 클릭했을 때,
+                    // 이미 지도에 궤적이 켜져 있다면 과거 궤적과 헷갈리지 않도록 싹 지워줍니다.
+                    if (_isHistoryVisible)
+                    {
+                        _isHistoryVisible = false;
 
+                        // 빈 리스트를 보내서 지도의 선을 지우라고 View(화면)에 명령합니다.
+                        HistoryPathRequested?.Invoke(new List<Tuple<double, double>>());
+
+                        // UI 스레드 안전하게 로그 출력
+                        Application.Current.Dispatcher.Invoke(() =>
+                            ChatLog += "\n[시스템] 조회 날짜가 변경되어 지도의 궤적을 초기화합니다.");
+                    }
+                }
+            }
+        }
 
         // 버튼 활성화 조건
         // 1. 시동 제어
@@ -155,17 +179,6 @@ namespace GCS_Project.ViewModels
         public ViewModel()
         {
             _mavlinkService = new MavlinkService();
-
-            // MavlinkService가 드론 모드 변경을 감지하면 내 FlightMode를 업데이트!
-            _mavlinkService.OnFlightModeChanged += (newMode) =>
-            {
-                // UI 스레드에서 안전하게 업데이트 (WPF 특성상 Dispatcher 필요할 수 있음)
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    FlightMode = newMode; // SetProperty가 실행되면서 UI와 버튼 상태가 자동 갱신됨
-                    ChatLog += $"\n[시스템] 기체 비행 모드 변경 확인: {newMode}";
-                });
-            };
 
             // 커맨드 초기화 (로직 분리)
             StartMissionCommand = new RelayCommand(ExecuteStartMission, () => IsMissionStartEnabled);

@@ -22,7 +22,7 @@ namespace GCS_Project.xServices
     {
         #region [1. 필드 및 설정 (Core Fields)]
         private readonly List<GeoPoint> _waypoints = new();
-        private bool _isMissionRunning;
+        public bool _isMissionRunning;
         private CancellationTokenSource? _cts;
         private readonly CompositeDisposable _subs = new(); // 메모리 누수 방지하기 위해 구독 해지 쓰레기통
         private const string GcsRouterId = "GCS_ROUTER";

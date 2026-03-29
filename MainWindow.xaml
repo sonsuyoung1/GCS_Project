@@ -322,6 +322,12 @@
                                           Unchecked="ManualModeToggle_Unchecked"/>
 
                     <Button Content="Show History"  Command="{Binding ShowHistoryCommand}" Background="#4A5568" Style="{StaticResource GcsButton}"/>
+
+                    
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="5,0">
+                        <TextBlock Text="Date:" Foreground="White" FontSize="11" Margin="2,0,0,2"/>
+                        <DatePicker SelectedDate="{Binding SelectedHistoryDate}" FontSize="12" Height="24"/>
+                    </StackPanel>
                 </UniformGrid>
 
                 <Border Grid.Row="2" Background="#0F172A" CornerRadius="8" Padding="10" Margin="0,0,0,10">
@@ -512,6 +518,7 @@
                                                 FontWeight="Bold" BorderThickness="0" Cursor="Hand" Margin="5,0,0,0"/>
                             </Grid>
                         </Border>
+                        
                     </Grid>
                 </Border>
             </Grid>
