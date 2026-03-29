@@ -45,6 +45,28 @@ namespace GCS_Project.xServices
         private DateTime _lastRawLogUtc = DateTime.MinValue;
         private DateTime _lastRawGpUtc = DateTime.MinValue;
         private DateTime _lastRawAttUtc = DateTime.MinValue;
+        private readonly object _telemetryRawLock = new();
+
+        private long _rxSeq = 0;        // 총 GP 수신 seq
+        private long _latestSeq = 0;    // 가장 최신 GP seq
+        private long _rawGpSeq = 0;     // 현재 raw GP seq
+
+        private double _rawLat;
+        private double _rawLon;
+        private double _rawRelAlt;
+        private double _rawLocalAlt;
+        private double _rawRoll;
+        private double _rawPitch;
+        private double _rawYaw;
+        private double _rawSpeed;
+        private int _rawBattery;
+        private bool _rawIsConnected;
+        private bool _rawIsArmed;
+
+        private DateTime _rawGpUtc = DateTime.MinValue;
+        private DateTime _rawLpnUtc = DateTime.MinValue;
+        private DateTime _rawAttUtc = DateTime.MinValue;
+        private DateTime _rawVfrUtc = DateTime.MinValue;
         private long _altTraceSeq = 0;
         /* private void PublishState()
          {
@@ -66,20 +88,37 @@ namespace GCS_Project.xServices
         private void PublishState()
         {
             DroneState snapshot;
-            long seq;
 
-            lock (_stateLock)
+            lock (_telemetryRawLock)
             {
-                snapshot = CurrentState.Clone();
-                seq = _altTraceSeq;
+                snapshot = new DroneState
+                {
+                    Latitude = _rawLat,
+                    Longitude = _rawLon,
+                    Altitude = _rawRelAlt,
+                    LocalAltitude = _rawLocalAlt,
+                    Speed = _rawSpeed,
+                    IsConnected = _rawIsConnected,
+                    BatteryPercent = _rawBattery,
+                    IsArmed = _rawIsArmed,
+                    Roll = _rawRoll,
+                    Pitch = _rawPitch,
+                    Yaw = _rawYaw,
+                    DebugSeq = _rawGpSeq,
+                    DebugRxUtc = _rawGpUtc,
+                    DebugPublishUtc = DateTime.UtcNow
+                };
             }
 
-            snapshot.DebugPublishUtc = DateTime.UtcNow;
+            OnDataUpdated?.Invoke(snapshot);
 
             System.Diagnostics.Debug.WriteLine(
-                $"[ALT-2 PUB] seq={seq} alt={snapshot.Altitude:F2} t={DateTime.Now:HH:mm:ss.fff}");
-
-            OnDataUpdated?.Invoke(snapshot);
+                $"[PUB] seq={snapshot.DebugSeq} alt={snapshot.Altitude:F2} t={DateTime.Now:HH:mm:ss.fff}");
+        }
+        //디버깅 후 삭제하삼
+        public long GetLatestSeq()
+        {
+            return Interlocked.Read(ref _latestSeq);
         }
         #endregion
 

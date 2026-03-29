@@ -33,7 +33,7 @@ namespace GCS_Project.Models
         private DateTime _debugPublishUtc;
         private DateTime _debugHandleUtc;
         private DateTime _debugMapUtc;
-
+        private long _debugSeq;
         // 2. 속성 선언 (SetProperty 방식 적용)
         public double Latitude { get => _latitude; set => SetProperty(ref _latitude, value); }
         public double Longitude { get => _longitude; set => SetProperty(ref _longitude, value); }
@@ -61,7 +61,7 @@ namespace GCS_Project.Models
         public DateTime DebugPublishUtc { get => _debugPublishUtc; set => SetProperty(ref _debugPublishUtc, value); }
         public DateTime DebugHandleUtc { get => _debugHandleUtc; set => SetProperty(ref _debugHandleUtc, value); }
         public DateTime DebugMapUtc { get => _debugMapUtc; set => SetProperty(ref _debugMapUtc, value); }
-
+        public long DebugSeq { get => _debugSeq; set => SetProperty(ref _debugSeq, value); }
         //03/22
         public DroneState Clone()
         {
@@ -90,6 +90,7 @@ namespace GCS_Project.Models
                 DebugPublishUtc = this.DebugPublishUtc,
                 DebugHandleUtc = this.DebugHandleUtc,
                 DebugMapUtc = this.DebugMapUtc,
+                DebugSeq = this.DebugSeq,
             };
         }
     }
