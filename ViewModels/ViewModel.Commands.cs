@@ -214,9 +214,6 @@ namespace GCS_Project.ViewModels
             if (_isHistoryVisible)
             {
                 _isHistoryVisible = false;
-                // 버튼 텍스트를 업데이트하고 싶다면 아래 주석 해제
-                // OnPropertyChanged(nameof(HistoryButtonText)); 
-
                 HistoryPathRequested?.Invoke(new List<Tuple<double, double>>());
                 Application.Current.Dispatcher.Invoke(() => ChatLog += "\n[시스템] 비행 궤적을 숨겼습니다.");
                 return;
@@ -224,34 +221,60 @@ namespace GCS_Project.ViewModels
 
             try
             {
-                Application.Current.Dispatcher.Invoke(() => ChatLog += "\n[시스템] DB 기록을 분석 중입니다...");
-
                 await Task.Run(() =>
                 {
                     using (var db = new GCS_Project.Data.AppDbContext())
                     {
-                        var logs = db.FlightLogs
-                                     .OrderByDescending(x => x.Timestamp)
-                                     .Take(500)
-                                     .ToList()
+                        // Var 대신 명시적으로 List 타입을 선언해 둡니다.
+                        // (if 문 안에서 값을 넣기 위함)
+                        List<FlightLog> logs;
+
+                        // [핵심 조건 분기] 달력에 날짜가 선택되어 있는지 확인!
+                        if (SelectedHistoryDate.HasValue)
+                        {
+                            // [경우 A] 달력에서 특정 날짜를 고른 경우
+                            DateTime targetDate = SelectedHistoryDate.Value.Date;
+                            DateTime nextDate = targetDate.AddDays(1);
+
+                            Application.Current.Dispatcher.Invoke(() =>
+                                ChatLog += $"\n[시스템] {targetDate:yyyy-MM-dd}의 비행 기록을 분석 중입니다...");
+
+                            // 선택한 날짜 하루치 데이터만 가져오기
+                            logs = db.FlightLogs
+                                     .Where(x => x.Timestamp >= targetDate && x.Timestamp < nextDate)
                                      .OrderBy(x => x.Timestamp)
                                      .ToList();
+                        }
+                        else
+                        {
+                            // [경우 B] 달력을 비워둔 경우 (현재 프로그램 실행 세션)
+                            Application.Current.Dispatcher.Invoke(() =>
+                                ChatLog += "\n[시스템] 현재 세션의 비행 기록을 분석 중입니다...");
 
+                            // 프로그램 켠 시간 이후의 데이터만 가져오기
+                            logs = db.FlightLogs
+                                     .Where(x => x.Timestamp >= _programStartTime)
+                                     .OrderBy(x => x.Timestamp)
+                                     .ToList();
+                        }
+
+                        // 2. 결과 처리 및 지도에 그리기
                         if (logs.Count > 0)
                         {
                             var path = logs.Select(l => new Tuple<double, double>(l.Latitude, l.Longitude)).ToList();
 
-                            // ⭐ [핵심] 성공적으로 표시했다면 상태를 true로 바꿉니다!
+                            // 상태를 true로 변경
                             _isHistoryVisible = true;
-                            // OnPropertyChanged(nameof(HistoryButtonText));
 
                             HistoryPathRequested?.Invoke(path);
 
-                            Application.Current.Dispatcher.Invoke(() => ChatLog += $"\n[성공] {logs.Count}개의 비행 궤적을 표시합니다.");
+                            Application.Current.Dispatcher.Invoke(() =>
+                                ChatLog += $"\n[성공] {logs.Count}개의 비행 궤적을 표시합니다.");
                         }
                         else
                         {
-                            Application.Current.Dispatcher.Invoke(() => ChatLog += "\n[알림] 표시할 비행 기록이 없습니다.");
+                            Application.Current.Dispatcher.Invoke(() =>
+                                ChatLog += "\n[알림] 표시할 비행 기록이 없습니다.");
                         }
                     }
                 });

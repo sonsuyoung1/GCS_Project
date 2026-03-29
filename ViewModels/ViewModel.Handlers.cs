@@ -57,8 +57,8 @@ namespace GCS_Project.ViewModels
 
             _mavlinkService.OnMissionCompleted += () =>
             {
+                _mavlinkService._isMissionRunning = false;
                 Application.Current.Dispatcher.BeginInvoke(() => {
-                    FlightMode = MODE_TAKEOFF;
                     ChatLog += "\n모든 목적지에 도착하여 미션을 종료합니다.";
                 });
             };
@@ -68,6 +68,24 @@ namespace GCS_Project.ViewModels
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
                     ChatLog += $"\n{message}";
+                });
+            };
+
+            // MavlinkService가 드론 모드 변경을 감지하면 내 FlightMode를 업데이트!
+            _mavlinkService.OnFlightModeChanged += (newMode) =>
+            {
+                // UI 스레드에서 안전하게 업데이트 (WPF 특성상 Dispatcher 필요할 수 있음)
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    if(_mavlinkService._isMissionRunning)
+                    {
+                        FlightMode = "MISSION";
+                    }
+                    else
+                    {
+                        FlightMode = newMode; // SetProperty가 실행되면서 UI와 버튼 상태가 자동 갱신됨
+                    }
+                    ChatLog += $"\n[시스템] 기체 비행 모드 변경 확인: {newMode}";
                 });
             };
 
@@ -195,14 +213,12 @@ namespace GCS_Project.ViewModels
 
                 if (FlightMode != MODE_IDLE)
                 {
-                    FlightMode = MODE_IDLE; // UI도 IDLE로 안전하게 복귀
                     ChatLog += "\n[시스템] 시동 꺼짐 확인. 대기(IDLE) 상태로 전환합니다.";
                 }
             }
             // 시동이 켜져있고 TAKEOFF 모드인데 비정상적으로 땅에 곤두박질친 경우의 예외 처리
             else if (_isFlyingHigh && FlightMode == MODE_TAKEOFF && state.Altitude <= 0.5)
             {
-                FlightMode = MODE_IDLE;
                 _isFlyingHigh = false;
                 ChatLog += "\n[시스템] 고도 저하 감지. 대기 상태로 전환합니다.";
             }
