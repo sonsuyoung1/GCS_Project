@@ -31,7 +31,7 @@ namespace GCS_Project.xServices
         private bool _telemetryHooked;
         private DateTime _lastHeartbeatUtc = DateTime.MinValue;
         private Task? _linkWatchdogTask;
-
+        private string _lastParsedMode = "IDLE";
 
         // v4 core
         private IProtocolFactory? _protocol;
@@ -52,6 +52,7 @@ namespace GCS_Project.xServices
         public event Action<string>? OnLogReceived;
         public event Action<int>? OnWaypointCountChanged;
         public event Action? OnMissionCompleted;
+        public event Action<string>? OnFlightModeChanged;
         #endregion
 
 

@@ -1,4 +1,5 @@
 ﻿using Asv.Mavlink.Common;
+using Asv.Mavlink.Minimal;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -30,6 +31,26 @@ namespace GCS_Project.xServices
             _joyY = roll;
             _joyZ = thrust;
             _joyR = yaw;
+        }
+
+        public async Task SetManualControlModeAsync(bool enable)
+        {
+            if (enable)
+            {
+                // 1. 드론 모드 변경 (POSCTL/MANUAL)
+                await SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 3);
+                // 2. 가상 조이스틱 패킷 스트리밍 시작
+                StartManualControl();
+                OnLogReceived?.Invoke("[시스템] 수동 조종 모드 활성화");
+            }
+            else
+            {
+                // 1. 조이스틱 중단
+                StopManualControl();
+                // 2. 드론을 다시 AUTO 모드로 복귀
+                await SetFlightMode(MavModeFlag.MavModeFlagCustomModeEnabled, 4);
+                OnLogReceived?.Invoke("[시스템] 수동 조종 모드 해제 (AUTO 복귀)");
+            }
         }
 
         /// <summary>
