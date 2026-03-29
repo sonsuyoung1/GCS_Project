@@ -64,7 +64,7 @@ namespace GCS_Project.xServices
                         }
 
                         // 2. 드론 상태 모드 파싱
-                        string currentParsedMode = ParsePX4Mode(packet.CustomMode);
+                        string currentParsedMode = ParsePX4Mode(packet?.CustomMode ?? 0);
 
                         // 드론의 실제 모드가 이전과 달라졌다면? ViewModel에 알림!
                         if (_lastParsedMode != currentParsedMode)
