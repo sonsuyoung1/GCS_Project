@@ -46,7 +46,7 @@ namespace GCS_Project.xServices
         private DateTime _lastRawGpUtc = DateTime.MinValue;
         private DateTime _lastRawAttUtc = DateTime.MinValue;
         private readonly object _telemetryRawLock = new();
-
+        private long _lastPublishedSeq = -1;
         private long _rxSeq = 0;        // 총 GP 수신 seq
         private long _latestSeq = 0;    // 가장 최신 GP seq
         private long _rawGpSeq = 0;     // 현재 raw GP seq
@@ -88,27 +88,25 @@ namespace GCS_Project.xServices
         private void PublishState()
         {
             DroneState snapshot;
+            long rawSeq;
 
-            lock (_telemetryRawLock)
+            snapshot = new DroneState
             {
-                snapshot = new DroneState
-                {
-                    Latitude = _rawLat,
-                    Longitude = _rawLon,
-                    Altitude = _rawRelAlt,
-                    LocalAltitude = _rawLocalAlt,
-                    Speed = _rawSpeed,
-                    IsConnected = _rawIsConnected,
-                    BatteryPercent = _rawBattery,
-                    IsArmed = _rawIsArmed,
-                    Roll = _rawRoll,
-                    Pitch = _rawPitch,
-                    Yaw = _rawYaw,
-                    DebugSeq = _rawGpSeq,
-                    DebugRxUtc = _rawGpUtc,
-                    DebugPublishUtc = DateTime.UtcNow
-                };
-            }
+                Latitude = _rawLat,
+                Longitude = _rawLon,
+                Altitude = _rawRelAlt,
+                LocalAltitude = _rawLocalAlt,
+                Speed = _rawSpeed,
+                IsConnected = _rawIsConnected,
+                BatteryPercent = _rawBattery,
+                IsArmed = _rawIsArmed,
+                Roll = _rawRoll,
+                Pitch = _rawPitch,
+                Yaw = _rawYaw,
+                DebugSeq = _rawGpSeq,
+                DebugRxUtc = _rawGpUtc,
+                DebugPublishUtc = DateTime.UtcNow
+            };
 
             OnDataUpdated?.Invoke(snapshot);
 
