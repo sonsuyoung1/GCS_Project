@@ -39,18 +39,8 @@ namespace GCS_Project.xServices
         private IDeviceExplorer? _explorer;
         private IClientDevice? _drone;
         private readonly object _waypointsLock = new();
-
-        // 03/22 디버깅용
-        private DateTime _lastUiUpdate = DateTime.MinValue;
-        private DateTime _lastRawLogUtc = DateTime.MinValue;
-        private DateTime _lastRawGpUtc = DateTime.MinValue;
-        private DateTime _lastRawAttUtc = DateTime.MinValue;
         private readonly object _telemetryRawLock = new();
-        private long _lastPublishedSeq = -1;
-        private long _rxSeq = 0;        // 총 GP 수신 seq
-        private long _latestSeq = 0;    // 가장 최신 GP seq
-        private long _rawGpSeq = 0;     // 현재 raw GP seq
-
+        private long _rawGpSeq = 0;
         private double _rawLat;
         private double _rawLon;
         private double _rawRelAlt;
@@ -68,55 +58,75 @@ namespace GCS_Project.xServices
         private DateTime _rawAttUtc = DateTime.MinValue;
         private DateTime _rawVfrUtc = DateTime.MinValue;
         private long _altTraceSeq = 0;
-        /* private void PublishState()
-         {
-             if ((DateTime.UtcNow - _lastUiUpdate).TotalMilliseconds < 100)
-                 return;
-
-             _lastUiUpdate = DateTime.UtcNow;
-
-             DroneState snapshot;
-             lock (_stateLock)
-             {
-                 snapshot = CurrentState.Clone();
-             }
-
-             snapshot.DebugPublishUtc = DateTime.UtcNow;
-             OnDataUpdated?.Invoke(snapshot);
-         }*/
-
         private void PublishState()
         {
-            DroneState snapshot;
+            double lat, lon, relAlt, localAlt, roll, pitch, yaw, speed;
+            int battery;
+            bool isConnected, isArmed;
             long rawSeq;
+            DateTime gpUtc, lpnUtc, attUtc, vfrUtc;
 
-            snapshot = new DroneState
+            // 1) raw 텔레메트리 스냅샷 복사
+            lock (_telemetryRawLock)
             {
-                Latitude = _rawLat,
-                Longitude = _rawLon,
-                Altitude = _rawRelAlt,
-                LocalAltitude = _rawLocalAlt,
-                Speed = _rawSpeed,
-                IsConnected = _rawIsConnected,
-                BatteryPercent = _rawBattery,
-                IsArmed = _rawIsArmed,
-                Roll = _rawRoll,
-                Pitch = _rawPitch,
-                Yaw = _rawYaw,
-                DebugSeq = _rawGpSeq,
-                DebugRxUtc = _rawGpUtc,
-                DebugPublishUtc = DateTime.UtcNow
-            };
+                lat = _rawLat;
+                lon = _rawLon;
+                relAlt = _rawRelAlt;
+                localAlt = _rawLocalAlt;
+                roll = _rawRoll;
+                pitch = _rawPitch;
+                yaw = _rawYaw;
+                speed = _rawSpeed;
+                battery = _rawBattery;
+                isConnected = _rawIsConnected;
+                isArmed = _rawIsArmed;
+                rawSeq = _rawGpSeq;
+
+                gpUtc = _rawGpUtc;
+                lpnUtc = _rawLpnUtc;
+                attUtc = _rawAttUtc;
+                vfrUtc = _rawVfrUtc;
+            }
+
+            bool shouldNotifyConnected = false;
+
+            // 2) CurrentState는 여기서만 갱신
+            lock (_stateLock)
+            {
+                if (!CurrentState.IsConnected && isConnected)
+                {
+                    shouldNotifyConnected = true;
+                }
+
+                CurrentState.Latitude = lat;
+                CurrentState.Longitude = lon;
+                CurrentState.Altitude = relAlt;
+                CurrentState.LocalAltitude = localAlt;
+                CurrentState.Roll = roll;
+                CurrentState.Pitch = pitch;
+                CurrentState.Yaw = yaw;
+                CurrentState.Speed = speed;
+                CurrentState.BatteryPercent = battery;
+                CurrentState.IsConnected = isConnected;
+                CurrentState.IsArmed = isArmed;
+
+                CurrentState.DebugSeq = rawSeq;
+                CurrentState.DebugRxUtc = new[] { gpUtc, lpnUtc, attUtc, vfrUtc }.Max();
+                CurrentState.DebugPublishUtc = DateTime.UtcNow;
+            }
+
+            if (shouldNotifyConnected)
+            {
+                OnLogReceived?.Invoke("[MAV] 통신 연결됨");
+            }
+
+            DroneState snapshot;
+            lock (_stateLock)
+            {
+                snapshot = CurrentState.Clone();
+            }
 
             OnDataUpdated?.Invoke(snapshot);
-
-            System.Diagnostics.Debug.WriteLine(
-                $"[PUB] seq={snapshot.DebugSeq} alt={snapshot.Altitude:F2} t={DateTime.Now:HH:mm:ss.fff}");
-        }
-        //디버깅 후 삭제하삼
-        public long GetLatestSeq()
-        {
-            return Interlocked.Read(ref _latestSeq);
         }
         #endregion
 
@@ -272,10 +282,12 @@ namespace GCS_Project.xServices
 
             //CurrentState.IsConnected = false;
             //디버깅용
-            lock (_stateLock)
+            lock (_telemetryRawLock)
             {
-                CurrentState.IsConnected = false;
+                _rawIsConnected = false;
+                _rawIsArmed = false;
             }
+
             PublishState();
             OnLogReceived?.Invoke("[MAV] 연결 종료됨");
         }
@@ -308,11 +320,25 @@ namespace GCS_Project.xServices
                 _lastHeartbeatUtc = DateTime.MinValue;
                 _linkWatchdogTask = null;
 
-                //CurrentState.IsConnected = false;
-                // 디버깅용
-                lock (_stateLock)
+                lock (_telemetryRawLock)
                 {
-                    CurrentState.IsConnected = false;
+                    _rawLat = 0;
+                    _rawLon = 0;
+                    _rawRelAlt = 0;
+                    _rawLocalAlt = 0;
+                    _rawRoll = 0;
+                    _rawPitch = 0;
+                    _rawYaw = 0;
+                    _rawSpeed = 0;
+                    _rawBattery = 0;
+                    _rawIsConnected = false;
+                    _rawIsArmed = false;
+
+                    _rawGpUtc = DateTime.MinValue;
+                    _rawLpnUtc = DateTime.MinValue;
+                    _rawAttUtc = DateTime.MinValue;
+                    _rawVfrUtc = DateTime.MinValue;
+                    _rawGpSeq = 0;
                 }
             }
             catch

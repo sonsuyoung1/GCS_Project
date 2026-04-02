@@ -33,11 +33,6 @@ namespace GCS_Project
         private System.Windows.Threading.DispatcherTimer? _overlayTimer;
 
         private int? _selectedTargetId = null;
-        private bool _mapUpdating = false;
-        private bool _mapPending = false;
-        private double _pendingMapLat;
-        private double _pendingMapLng;
-        private double _pendingMapHeading;
         #endregion
 
 
@@ -51,21 +46,8 @@ namespace GCS_Project
 
             _viewModel.DetectedTargets.CollectionChanged += (s, e) =>
             {
-                _overlayDirty = true;
+                RedrawBboxes();
             };
-
-            _overlayTimer = new System.Windows.Threading.DispatcherTimer();
-            _overlayTimer.Interval = TimeSpan.FromMilliseconds(100);
-            //나중에 최적화
-            _overlayTimer.Tick += (s, e) =>
-            {
-                if (_overlayDirty)
-                {
-                    RedrawBboxes();
-                    _overlayDirty = false;
-                }
-            };
-            _overlayTimer.Start();
 
             // ===== [VIDEO INIT] =====
             Core.Initialize();
@@ -239,36 +221,11 @@ namespace GCS_Project
             // 1. 드론 실시간 위치 업데이트 (single-flight)
             _viewModel.PositionUpdated += (lat, lng, heading) =>
             {
-                _pendingMapLat = lat;
-                _pendingMapLng = lng;
-                _pendingMapHeading = heading;
-                _mapPending = true;
-
-                if (_mapUpdating) return;
-
-                _mapUpdating = true;
-
                 Dispatcher.InvokeAsync(async () =>
                 {
-                    try
+                    if (_mapController != null)
                     {
-                        while (_mapPending)
-                        {
-                            _mapPending = false;
-
-                            double latNow = _pendingMapLat;
-                            double lngNow = _pendingMapLng;
-                            double headingNow = _pendingMapHeading;
-
-                            if (_mapController != null)
-                            {
-                                await _mapController.UpdateDroneLocation(latNow, lngNow, headingNow);
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        _mapUpdating = false;
+                        await _mapController.UpdateDroneLocation(lat, lng, heading);
                     }
                 });
             };

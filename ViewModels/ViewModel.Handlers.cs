@@ -4,9 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
-using System.Windows;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Threading.Tasks.Dataflow;
+using System.Windows;
 
 namespace GCS_Project.ViewModels
 {
@@ -62,12 +63,10 @@ namespace GCS_Project.ViewModels
 
             _mavlinkService.OnDataUpdated += (state) =>
             {
-                Application.Current.Dispatcher.Invoke(() =>
+                Application.Current.Dispatcher.BeginInvoke(() =>
                 {
-                    ApplyAllState(state);  
+                    ApplyAllState(state);
                 });
-
-                ProcessTelemetryState(state); 
             };
 
             _mavlinkService.OnWaypointCountChanged += (count) =>
@@ -106,26 +105,11 @@ namespace GCS_Project.ViewModels
 
             _yoloMetaUdpService.OnTargetsReceived += (targets) =>
             {
-                lock (_targetLock)
+                Application.Current.Dispatcher.BeginInvoke(() =>
                 {
-                    _latestTargets = targets;
-                }
+                    ApplyDetectedTargets(targets);
+                });
             };
-
-            //yolo 최적화 03/22
-            _targetUiTimer = new System.Windows.Threading.DispatcherTimer();
-            _targetUiTimer.Interval = TimeSpan.FromMilliseconds(100);
-            _targetUiTimer.Tick += (s, e) =>
-            {
-                List<DetectedTarget> snapshot;
-                lock (_targetLock)
-                {
-                    snapshot = _latestTargets.ToList();
-                }
-
-                ApplyDetectedTargets(snapshot);
-            };
-            _targetUiTimer.Start();   
 
             try
             {
@@ -167,36 +151,10 @@ namespace GCS_Project.ViewModels
                 });
             };*/
         }
-        //HandleDroneData() 를 두개로 나눠서 ui 스레드의 부담을 줄임
-        private void ProcessTelemetryState(DroneState state)
-        {
-            _lastProcessUtc = DateTime.UtcNow;
-            state.DebugHandleUtc = DateTime.UtcNow;
-
-            lock (_telemetryUiLock)
-            {
-                _latestHudState = state.Clone();
-
-                _latestTakeoffLat = state.TakeoffLat;
-                _latestTakeoffLng = state.TakeoffLng;
-
-                _latestBatteryWarning = state.BatteryPercent > 0 && state.BatteryPercent <= 20;
-
-                if (state.Altitude > 1.0)
-                {
-                    _isFlyingHigh = true;
-                }
-
-                if (!state.IsArmed)
-                {
-                    _isFlyingHigh = false;
-                }
-            }
-        }
 
         private void ApplyAllState(DroneState state)
         {
-            // ===== HUD =====
+            // HUD
             _uiDrone.Altitude = state.Altitude;
             _uiDrone.Speed = state.Speed;
             _uiDrone.Roll = state.Roll;
@@ -209,14 +167,53 @@ namespace GCS_Project.ViewModels
             if (PitchOffset != newPitchOffset) PitchOffset = newPitchOffset;
             if (HeadingOffset != newHeadingOffset) HeadingOffset = newHeadingOffset;
 
-            // ===== STATUS (여기서만 상태 갱신) =====
+            // STATUS
             _uiDrone.Latitude = state.Latitude;
             _uiDrone.Longitude = state.Longitude;
             _uiDrone.IsConnected = state.IsConnected;
             _uiDrone.IsArmed = state.IsArmed;
             _uiDrone.BatteryPercent = state.BatteryPercent;
+            _uiDrone.TakeoffLat = state.TakeoffLat;
+            _uiDrone.TakeoffLng = state.TakeoffLng;
+            _uiDrone.IsTargetDetected = state.IsTargetDetected;
+            _uiDrone.TargetLat = state.TargetLat;
+            _uiDrone.TargetLng = state.TargetLng;
+            _uiDrone.TargetAltitude = state.TargetAltitude;
+            _uiDrone.TargetSpeed = state.TargetSpeed;
 
-            // ===== MAP =====
+            // 배터리 경고 상태만 내부 플래그 관리
+            bool batteryWarning = state.BatteryPercent > 0 && state.BatteryPercent <= 20;
+            if (batteryWarning && !_batteryWarningShown)
+            {
+                _batteryWarningShown = true;
+            }
+            else if (!batteryWarning)
+            {
+                _batteryWarningShown = false;
+            }
+
+            // 비행 상태 추적
+            if (state.Altitude > 1.0)
+            {
+                _isFlyingHigh = true;
+            }
+
+            if (!state.IsArmed)
+            {
+                _isFlyingHigh = false;
+
+                if (FlightMode != MODE_IDLE)
+                {
+                    FlightMode = MODE_IDLE;
+                }
+            }
+            else if (_isFlyingHigh && FlightMode == MODE_TAKEOFF && state.Altitude <= 0.5)
+            {
+                FlightMode = MODE_IDLE;
+                _isFlyingHigh = false;
+            }
+
+            // MAP
             if (!(state.Latitude == 0 && state.Longitude == 0))
             {
                 PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
@@ -226,100 +223,6 @@ namespace GCS_Project.ViewModels
             {
                 TakeoffPointSet?.Invoke(state.TakeoffLat.Value, state.TakeoffLng.Value);
                 _isTakeoffMarkerDrawn = true;
-            }
-            System.Diagnostics.Debug.WriteLine(
-                $"[UI-SET] alt={_uiDrone.Altitude:F2} spd={_uiDrone.Speed:F2} conn={_uiDrone.IsConnected} armed={_uiDrone.IsArmed} t={DateTime.Now:HH:mm:ss.fff}");
-        }
-        private void ApplyHudState()
-        {
-            _lastApplyUtc = DateTime.UtcNow;
-
-            DroneState state;
-
-            lock (_telemetryUiLock)
-            {
-                state = _latestHudState.Clone();
-            }
-
-            if (!state.IsConnected) return;
-
-            Interlocked.Exchange(ref _appliedSeq, state.DebugSeq);
-
-            long latest = _mavlinkService.GetLatestSeq();
-            long applied = Interlocked.Read(ref _appliedSeq);
-            long backlog = latest - applied;
-
-            System.Diagnostics.Debug.WriteLine(
-                $"[APP] latest={latest} applied={applied} backlog={backlog} alt={state.Altitude:F2} t={DateTime.Now:HH:mm:ss.fff}");
-
-            /*System.Diagnostics.Debug.WriteLine(
-                $"[ALT-4 APP] srcAlt={state.Altitude:F2} uiBefore={_uiDrone.Altitude:F2} " +
-                $"rx={state.DebugRxUtc:HH:mm:ss.fff} pub={state.DebugPublishUtc:HH:mm:ss.fff} " +
-                $"app={DateTime.Now:HH:mm:ss.fff}");*/
-
-            if (_uiDrone.Altitude != state.Altitude) _uiDrone.Altitude = state.Altitude;
-            if (_uiDrone.Speed != state.Speed) _uiDrone.Speed = state.Speed;
-            if (_uiDrone.Roll != state.Roll) _uiDrone.Roll = state.Roll;
-            if (_uiDrone.Pitch != state.Pitch) _uiDrone.Pitch = state.Pitch;
-            if (_uiDrone.Yaw != state.Yaw) _uiDrone.Yaw = state.Yaw;
-
-            double newPitchOffset = state.Pitch * 3.55;
-            double newHeadingOffset = -state.Yaw;
-
-            if (PitchOffset != newPitchOffset) PitchOffset = newPitchOffset;
-            if (HeadingOffset != newHeadingOffset) HeadingOffset = newHeadingOffset;
-        }
-
-        private void ApplyStatusState()
-        {
-            DroneState state;
-            bool latestBatteryWarning;
-            bool isFlyingHigh;
-
-            lock (_telemetryUiLock)
-            {
-                state = _latestHudState.Clone();
-                latestBatteryWarning = _latestBatteryWarning;
-                isFlyingHigh = _isFlyingHigh;
-            }
-
-            if (_uiDrone.Latitude != state.Latitude) _uiDrone.Latitude = state.Latitude;
-            if (_uiDrone.Longitude != state.Longitude) _uiDrone.Longitude = state.Longitude;
-            if (_uiDrone.IsConnected != state.IsConnected) _uiDrone.IsConnected = state.IsConnected;
-            if (_uiDrone.TakeoffLat != state.TakeoffLat) _uiDrone.TakeoffLat = state.TakeoffLat;
-            if (_uiDrone.TakeoffLng != state.TakeoffLng) _uiDrone.TakeoffLng = state.TakeoffLng;
-            if (_uiDrone.BatteryPercent != state.BatteryPercent) _uiDrone.BatteryPercent = state.BatteryPercent;
-            if (_uiDrone.IsArmed != state.IsArmed) _uiDrone.IsArmed = state.IsArmed;
-            if (_uiDrone.IsTargetDetected != state.IsTargetDetected) _uiDrone.IsTargetDetected = state.IsTargetDetected;
-            if (_uiDrone.TargetLat != state.TargetLat) _uiDrone.TargetLat = state.TargetLat;
-            if (_uiDrone.TargetLng != state.TargetLng) _uiDrone.TargetLng = state.TargetLng;
-            if (_uiDrone.TargetAltitude != state.TargetAltitude) _uiDrone.TargetAltitude = state.TargetAltitude;
-            if (_uiDrone.TargetSpeed != state.TargetSpeed) _uiDrone.TargetSpeed = state.TargetSpeed;
-
-            if (latestBatteryWarning && !_batteryWarningShown)
-            {
-                _batteryWarningShown = true;
-            }
-
-            if (!latestBatteryWarning)
-            {
-                _batteryWarningShown = false;
-            }
-
-            if (!state.IsArmed)
-            {
-                if (FlightMode != MODE_IDLE)
-                {
-                    FlightMode = MODE_IDLE;
-                }
-            }
-            else if (isFlyingHigh && FlightMode == MODE_TAKEOFF && state.Altitude <= 0.5)
-            {
-                FlightMode = MODE_IDLE;
-                lock (_telemetryUiLock)
-                {
-                    _isFlyingHigh = false;
-                }
             }
 
             RefreshCommandStatesIfNeeded();
@@ -402,7 +305,7 @@ namespace GCS_Project.ViewModels
                 // 시작하자마자 중립 입력 넣기
                 _mavlinkService.SetJoystick(0, 0, 500, 0);
 
-                FlightMode = "MANUAL";
+                FlightMode = MODE_MANUAL;
                 AppendLog("[시스템] 수동 조종 모드 진입");
             }
             else
@@ -417,7 +320,7 @@ namespace GCS_Project.ViewModels
                 _mavlinkService.StopManualControl();
 
                 // 4. 상태 표시
-                FlightMode = "HOLD";
+                FlightMode = MODE_HOLD;
                 AppendLog("[시스템] 수동 조종 모드 종료 - 제자리 유지");
             }
         }
