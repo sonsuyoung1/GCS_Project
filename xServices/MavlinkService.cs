@@ -208,11 +208,7 @@ namespace GCS_Project.xServices
                     found.TrySetResult(true);
                 }));
 
-                var foundTask = await Task.WhenAny(found.Task, Task.Delay(5000, _cts.Token));
-                if (foundTask != found.Task)
-                {
-                    throw new TimeoutException("드론 장치 탐색 시간 초과");
-                }
+                await found.Task;
 
                 // 2) 드론 준비 완료 대기
                 var ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -225,11 +221,7 @@ namespace GCS_Project.xServices
                     }
                 }));
 
-                var readyTask = await Task.WhenAny(ready.Task, Task.Delay(5000, _cts.Token));
-                if (readyTask != ready.Task)
-                {
-                    throw new TimeoutException("드론 장치 준비 시간 초과");
-                }
+                await ready.Task;
 
                 HookTelemetry(_drone);
                 HookCommandAck(_drone);

@@ -48,6 +48,7 @@ namespace GCS_Project.ViewModels
         private const string MODE_TRACKING = "TRACKING";
         private const string MODE_MANUAL = "MANUAL";
         private const string MODE_HOLD = "HOLD";
+        private int _currentFlightId;
         //버튼 상태에 영향을 주는 값만 따로 스냅샷으로 묶고, 그 스냅샷이 바뀔 때만 NotifyCommandStates()를 호출
         private sealed record CommandStateSnapshot(
             string FlightMode,
