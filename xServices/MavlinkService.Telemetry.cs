@@ -163,7 +163,6 @@ namespace GCS_Project.xServices
                 .Subscribe(packet =>
                 {
                     var now = DateTime.UtcNow;
-                    _lastRawAttUtc = now;
 
                     var roll = packet.Payload.Roll * (180.0 / Math.PI);
                     var pitch = packet.Payload.Pitch * (180.0 / Math.PI);

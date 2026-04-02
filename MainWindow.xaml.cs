@@ -29,7 +29,6 @@ namespace GCS_Project
         private const double FRAME_WIDTH = 1920.0;
         private const double FRAME_HEIGHT = 1080.0;
 
-        private bool _overlayDirty = false;
         private System.Windows.Threading.DispatcherTimer? _overlayTimer;
 
         private int? _selectedTargetId = null;
@@ -92,10 +91,10 @@ namespace GCS_Project
 
             UpdateOverlayBounds();
 
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                UpdateOverlayBounds();
-            }), System.Windows.Threading.DispatcherPriority.Loaded);
+            await Dispatcher.InvokeAsync(
+                UpdateOverlayBounds,
+                System.Windows.Threading.DispatcherPriority.Loaded
+            );
         }
 
         private async Task InitializeMapAsync()
@@ -375,9 +374,8 @@ namespace GCS_Project
                     _viewModel.AddWaypointFromMap(lat, lng);
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                //System.Diagnostics.Debug.WriteLine($"[JS Bridge Error] {ex.Message}");
             }
         }
 
