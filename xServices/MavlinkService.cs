@@ -109,10 +109,6 @@ namespace GCS_Project.xServices
                 CurrentState.BatteryPercent = battery;
                 CurrentState.IsConnected = isConnected;
                 CurrentState.IsArmed = isArmed;
-
-                CurrentState.DebugSeq = rawSeq;
-                CurrentState.DebugRxUtc = new[] { gpUtc, lpnUtc, attUtc, vfrUtc }.Max();
-                CurrentState.DebugPublishUtc = DateTime.UtcNow;
             }
 
             if (shouldNotifyConnected)
