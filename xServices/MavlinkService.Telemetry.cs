@@ -20,45 +20,6 @@ namespace GCS_Project.xServices
             if (_telemetryHooked) return;
             _telemetryHooked = true;
 
-            // 어떤 패킷이든 들어오면 살아있다는 방어 로직
-            /*_router!.OnRxMessage
-                .Subscribe(_ =>
-                {
-                    _lastHeartbeatUtc = DateTime.UtcNow;
-
-                    if (!CurrentState.IsConnected)
-                    {
-                        CurrentState.IsConnected = true;
-                        OnLogReceived?.Invoke("[MAV] 통신 연결됨");
-                    }
-                })
-                .AddTo(_subs);*/
-            //디버깅용
-            _router!.OnRxMessage
-                .Subscribe(_ =>
-                {
-                    _lastHeartbeatUtc = DateTime.UtcNow;
-
-                    bool shouldLog = false;
-
-                    lock (_stateLock)
-                    {
-                        if (!CurrentState.IsConnected)
-                        {
-                            CurrentState.IsConnected = true;
-                            shouldLog = true;
-                        }
-                    }
-
-                    if (shouldLog)
-                    {
-                        OnLogReceived?.Invoke("[MAV] 통신 연결됨");
-                    }
-                })
-                .AddTo(_subs);
-
-            
-
             // 1) 하트비트 감시
             var hb = drone.GetMicroservice<IHeartbeatClient>();
             if (hb != null)
@@ -66,39 +27,15 @@ namespace GCS_Project.xServices
                 hb.RawHeartbeat
                     .Subscribe(packet =>
                     {
-                        _lastHeartbeatUtc = DateTime.UtcNow;
-
+                        var now = DateTime.UtcNow;
                         bool isArmed = (packet?.BaseMode & MavModeFlag.MavModeFlagSafetyArmed) != 0;
+
+                        _lastHeartbeatUtc = now;
 
                         lock (_telemetryRawLock)
                         {
                             _rawIsConnected = true;
                             _rawIsArmed = isArmed;
-                        }
-
-                        lock (_stateLock)
-                        {
-                            if (CurrentState.IsArmed != isArmed)
-                            {
-                                CurrentState.IsArmed = isArmed;
-                            }
-                        }
-                    })
-                    .AddTo(_subs);
-                //디버깅용
-                hb.RawHeartbeat
-                    .Subscribe(packet =>
-                    {
-                        _lastHeartbeatUtc = DateTime.UtcNow;
-
-                        bool isArmed = (packet?.BaseMode & MavModeFlag.MavModeFlagSafetyArmed) != 0;
-
-                        lock (_stateLock)
-                        {
-                            if (CurrentState.IsArmed != isArmed)
-                            {
-                                CurrentState.IsArmed = isArmed;
-                            }
                         }
                     })
                     .AddTo(_subs);
@@ -134,7 +71,7 @@ namespace GCS_Project.xServices
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[Heartbeat 전송 에러] {ex.Message}");
+                        OnLogReceived?.Invoke($"[경고] GCS Heartbeat 전송 실패: {ex.Message}");
                     }
                 })
                 .AddTo(_subs);
@@ -150,60 +87,24 @@ namespace GCS_Project.xServices
                                 CurrentState.Altitude = gp.Alt / 1000.0;
                             })
                             .AddTo(_subs);*/
-            //디버깅용
-            /*_router!.OnRxMessage
-                .OfType<IProtocolMessage, GlobalPositionIntPacket>()
-                .Subscribe(packet =>
-                {
-                    var now = DateTime.UtcNow;
-                    _lastRawGpUtc = now;
-
-                    lock (_stateLock)
-                    {
-                        CurrentState.DebugRxUtc = now;
-                        CurrentState.Latitude = packet.Payload.Lat / 1e7;
-                        CurrentState.Longitude = packet.Payload.Lon / 1e7;
-                        //CurrentState.Altitude = packet.Payload.RelativeAlt / 1000.0;
-                    }
-                })
-                .AddTo(_subs);*/
 
             _router!.OnRxMessage
                 .OfType<IProtocolMessage, GlobalPositionIntPacket>()
                 .Subscribe(packet =>
                 {
                     var now = DateTime.UtcNow;
-                    var seq = Interlocked.Increment(ref _rxSeq);
 
                     var lat = packet.Payload.Lat / 1e7;
                     var lon = packet.Payload.Lon / 1e7;
                     var relAlt = packet.Payload.RelativeAlt / 1000.0;
 
-                    _lastRawGpUtc = now;
-
                     lock (_telemetryRawLock)
                     {
                         _rawLat = lat;
                         _rawLon = lon;
-                        _rawRelAlt = relAlt;   
+                        _rawRelAlt = relAlt;
                         _rawGpUtc = now;
-                        _rawGpSeq = seq;
                     }
-
-                    Interlocked.Exchange(ref _latestSeq, seq);
-
-                    lock (_stateLock)
-                    {
-                        CurrentState.DebugRxUtc = now;
-                        CurrentState.Latitude = lat;
-                        CurrentState.Longitude = lon;
-                        CurrentState.Altitude = relAlt;  
-                    }
-
-                    PublishState();
-
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[GP-RX] relAlt={relAlt:F2} t={DateTime.Now:HH:mm:ss.fff}");
                 })
                 .AddTo(_subs);
 
@@ -221,11 +122,6 @@ namespace GCS_Project.xServices
                         _rawSpeed = speed;
                         _rawVfrUtc = now;
                     }
-
-                    lock (_stateLock)
-                    {
-                        CurrentState.Speed = speed;
-                    }
                 })
                 .AddTo(_subs);
 
@@ -238,7 +134,6 @@ namespace GCS_Project.xServices
                                 CurrentState.BatteryPercent = b.BatteryRemaining;
                             })
                             .AddTo(_subs);*/
-            // 디버깅용
             drone.GetMicroservice<ITelemetryClient>()?.Battery
                 .Subscribe(b =>
                 {
@@ -247,11 +142,6 @@ namespace GCS_Project.xServices
                     lock (_telemetryRawLock)
                     {
                         _rawBattery = b.BatteryRemaining;
-                    }
-
-                    lock (_stateLock)
-                    {
-                        CurrentState.BatteryPercent = b.BatteryRemaining;
                     }
                 })
                 .AddTo(_subs);
@@ -268,7 +158,6 @@ namespace GCS_Project.xServices
                             })
                             .AddTo(_subs);*/
 
-            //디버깅용
             _router!.OnRxMessage
                 .OfType<IProtocolMessage, AttitudePacket>()
                 .Subscribe(packet =>
@@ -287,14 +176,6 @@ namespace GCS_Project.xServices
                         _rawYaw = yaw;
                         _rawAttUtc = now;
                     }
-
-                    lock (_stateLock)
-                    {
-                        CurrentState.DebugRxUtc = now;
-                        CurrentState.Roll = roll;
-                        CurrentState.Pitch = pitch;
-                        CurrentState.Yaw = yaw;
-                    }
                 })
                 .AddTo(_subs);
 
@@ -310,44 +191,15 @@ namespace GCS_Project.xServices
                         _rawLocalAlt = localAlt;
                         _rawLpnUtc = now;
                     }
-
-                    lock (_stateLock)
-                    {
-                        CurrentState.LocalAltitude = localAlt;
-                    }
-
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[LPN-RX] localAlt={localAlt:F2} t={DateTime.Now:HH:mm:ss.fff}");
                 })
                 .AddTo(_subs);
 
             // 7) UI 갱신 타이머
-            /*_uiUpdateTimer = Observable
-                .Interval(TimeSpan.FromMilliseconds(100))
+            _uiUpdateTimer = Observable
+                .Interval(TimeSpan.FromMilliseconds(50))
                 .Subscribe(_ =>
                 {
                     PublishState();
-                })
-                .AddTo(_subs);*/
-
-            /*_router!.OnRxMessage
-                .OfType<IProtocolMessage, LocalPositionNedPacket>()
-                .Subscribe(packet =>
-                {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[LPN] x={packet.Payload.X:F2}, y={packet.Payload.Y:F2}, z={packet.Payload.Z:F2}, vz={packet.Payload.Vz:F2}");
-                })
-                .AddTo(_subs);*/
-
-            //디버깅용 로그 타이머
-            Observable.Interval(TimeSpan.FromSeconds(1))
-                .Subscribe(_ =>
-                {
-                    var now = DateTime.UtcNow;
-                    var gpAge = (now - _lastRawGpUtc).TotalMilliseconds;
-                    var attAge = (now - _lastRawAttUtc).TotalMilliseconds;
-
-                    OnLogReceived?.Invoke($"[RAW-AGE] GP={gpAge:F0}ms, ATT={attAge:F0}ms");
                 })
                 .AddTo(_subs);
         }
@@ -400,23 +252,17 @@ namespace GCS_Project.xServices
                     {
                         var ageMs = (DateTime.UtcNow - _lastHeartbeatUtc).TotalMilliseconds;
 
-                        /*if (ageMs > 3000 && CurrentState.IsConnected)
-                        {
-                            CurrentState.IsConnected = false;
-                            OnLogReceived?.Invoke("[비상] 기체와의 통신이 끊겼습니다. (Heartbeat Timeout)");
-                        }*/
-                        // 디버깅용
                         bool shouldNotify = false;
 
-                        lock (_stateLock)
+                        lock (_telemetryRawLock)
                         {
-                            if (ageMs > 3000 && CurrentState.IsConnected)
+                            if (ageMs > 3000 && _rawIsConnected)
                             {
-                                CurrentState.IsConnected = false;
+                                _rawIsConnected = false;
                                 shouldNotify = true;
                             }
                         }
-                        
+
                         if (shouldNotify)
                         {
                             OnLogReceived?.Invoke("[비상] 기체와의 통신이 끊겼습니다. (Heartbeat Timeout)");

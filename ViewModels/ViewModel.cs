@@ -28,26 +28,17 @@ namespace GCS_Project.ViewModels
         private bool _isFlyingHigh = false;
         private bool _isTakeoffMarkerDrawn = false;
         private readonly List<GeoPoint> _waypoints = new List<GeoPoint>();
-        private DateTime _lastMapUpdate = DateTime.MinValue;
         private string _userInputCommand = "";
         //scan 03/16
         private CancellationTokenSource? _scanCts;
         private bool _isScanning = false;
-        //03/26
-        private DroneState? _pendingState;
-        private bool _uiUpdating = false;
-
         private bool _batteryWarningShown = false;
         private const string MODE_IDLE = "IDLE";
         private const string MODE_TAKEOFF = "TAKEOFF";
         private const string MODE_MISSION = "MISSION";
         private const string MODE_TRACKING = "TRACKING";
-        //디버깅용
-        private DateTime _lastProcessUtc = DateTime.MinValue;
-        private DateTime _lastApplyUtc = DateTime.MinValue;
-        public DateTime LastProcessUtc => _lastProcessUtc;
-        public DateTime LastApplyUtc => _lastApplyUtc;
-        private long _appliedSeq = 0;
+        private const string MODE_MANUAL = "MANUAL";
+        private const string MODE_HOLD = "HOLD";
         //버튼 상태에 영향을 주는 값만 따로 스냅샷으로 묶고, 그 스냅샷이 바뀔 때만 NotifyCommandStates()를 호출
         private sealed record CommandStateSnapshot(
             string FlightMode,
@@ -57,27 +48,8 @@ namespace GCS_Project.ViewModels
             bool HasSelectedTarget
         );
         private CommandStateSnapshot? _lastCommandStateSnapshot;
-        // yolo 최적화를 위한 필드 추가 03/22
-        private readonly object _targetLock = new();
-        private List<DetectedTarget> _latestTargets = new();
-        private System.Windows.Threading.DispatcherTimer? _targetUiTimer;
-        private readonly object _droneStateLock = new();
-        private DroneState? _latestDroneState;
-        private System.Windows.Threading.DispatcherTimer? _droneUiTimer;
-        private System.Windows.Threading.DispatcherTimer? _mapUiTimer;
-        private System.Windows.Threading.DispatcherTimer? _statusUiTimer;
-        private readonly object _telemetryUiLock = new();
-        //03/26
-        private DroneState _latestHudState = new DroneState(); //계기판용 최신 상태 저장
-        //지도용 최신 좌표 저장
-        private double _latestMapLat;
-        private double _latestMapLng;
-        private double _latestMapHeading;
-        private double? _latestTakeoffLat;
-        private double? _latestTakeoffLng;
-        private bool _latestBatteryWarning;
 
-
+        private System.Windows.Threading.DispatcherTimer? _clockTimer;
         #endregion
 
 
@@ -148,10 +120,9 @@ namespace GCS_Project.ViewModels
 
 
         // 버튼 활성화 조건들 
-        // 버튼 활성화 조건들 (매직 스트링 제거 완벽 적용!)
         public bool IsMissionStartEnabled => (FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && Drone.IsConnected && Drone.IsArmed;
         public bool IsTakeoffEnabled => (FlightMode == MODE_IDLE) && Drone.IsConnected && Drone.IsArmed;
-        public bool IsLandingEnabled => (FlightMode == MODE_TAKEOFF && FlightMode != MODE_MISSION) && Drone.IsConnected && Drone.IsArmed;
+        public bool IsLandingEnabled => (FlightMode == MODE_TAKEOFF) && Drone.IsConnected && Drone.IsArmed;
         public bool IsRtlEnabled => (FlightMode == MODE_TAKEOFF || FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING) && Drone.IsConnected && Drone.IsArmed;
         public bool IsUndoEnabled => (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && FlightMode != MODE_MISSION;
         public bool IsClearEnabled => (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && FlightMode != MODE_MISSION;
@@ -269,7 +240,7 @@ namespace GCS_Project.ViewModels
 
             _targetLostTimer = new System.Timers.Timer(3000); // 3초 동안 데이터 없으면 소실 판단
             _targetLostTimer.Elapsed += (s, e) => {
-                if (FlightMode == "TRACKING")
+                if (FlightMode == MODE_TRACKING)
                 {
                     Application.Current.Dispatcher.BeginInvoke(() =>
                     {
@@ -281,15 +252,18 @@ namespace GCS_Project.ViewModels
             };
 
             // 생성자 안에서 시계 타이머를 돌려줍니다.
-            System.Windows.Threading.DispatcherTimer clockTimer = new System.Windows.Threading.DispatcherTimer();
-            clockTimer.Interval = TimeSpan.FromSeconds(1); // 1초마다 실행
-            clockTimer.Tick += (s, e) =>
+            _clockTimer = new System.Windows.Threading.DispatcherTimer
             {
-                // "2024-05-18 14:30:45" 형태로 1초마다 업데이트
+                Interval = TimeSpan.FromSeconds(1)
+            };
+
+            _clockTimer.Tick += (s, e) =>
+            {
                 CurrentDateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             };
-            CurrentDateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); // 시작하자마자 한 번 세팅
-            clockTimer.Start();
+
+            CurrentDateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            _clockTimer.Start();
 
             // 서비스 시작 및 이벤트 구독
             InitializeService();
@@ -301,11 +275,12 @@ namespace GCS_Project.ViewModels
         {
             _targetLostTimer?.Stop();
             _targetLostTimer?.Dispose();
-            _mavlinkService?.StopAsync();
-            _yoloMetaUdpService?.StopAsync();
-            _targetUiTimer?.Stop();
-            _droneUiTimer?.Stop();
-            _statusUiTimer?.Stop();
+
+            _clockTimer?.Stop();
+            _clockTimer = null;
+
+            _ = _mavlinkService?.StopAsync();
+            _ = _yoloMetaUdpService?.StopAsync();
         }
     }
 }

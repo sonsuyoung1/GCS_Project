@@ -28,12 +28,7 @@ namespace GCS_Project.Models
         private double _yaw;
         private double _targetAltitude = 5.0;
         private double _targetSpeed = 2.0;
-        //디버깅용임 나중에 삭제 요망 
-        private DateTime _debugRxUtc;
-        private DateTime _debugPublishUtc;
-        private DateTime _debugHandleUtc;
-        private DateTime _debugMapUtc;
-        private long _debugSeq;
+
         // 2. 속성 선언 (SetProperty 방식 적용)
         public double Latitude { get => _latitude; set => SetProperty(ref _latitude, value); }
         public double Longitude { get => _longitude; set => SetProperty(ref _longitude, value); }
@@ -56,12 +51,7 @@ namespace GCS_Project.Models
 
         public double TargetAltitude { get => _targetAltitude; set => SetProperty(ref _targetAltitude, value); }
         public double TargetSpeed { get => _targetSpeed; set => SetProperty(ref _targetSpeed, value); }
-        //아래는 디버깅용임 삭제해야돼(아래 4줄)
-        public DateTime DebugRxUtc { get => _debugRxUtc; set => SetProperty(ref _debugRxUtc, value); }
-        public DateTime DebugPublishUtc { get => _debugPublishUtc; set => SetProperty(ref _debugPublishUtc, value); }
-        public DateTime DebugHandleUtc { get => _debugHandleUtc; set => SetProperty(ref _debugHandleUtc, value); }
-        public DateTime DebugMapUtc { get => _debugMapUtc; set => SetProperty(ref _debugMapUtc, value); }
-        public long DebugSeq { get => _debugSeq; set => SetProperty(ref _debugSeq, value); }
+        
         //03/22
         public DroneState Clone()
         {
@@ -85,12 +75,6 @@ namespace GCS_Project.Models
                 Yaw = this.Yaw,
                 TargetAltitude = this.TargetAltitude,
                 TargetSpeed = this.TargetSpeed,
-                //debuging
-                DebugRxUtc = this.DebugRxUtc,
-                DebugPublishUtc = this.DebugPublishUtc,
-                DebugHandleUtc = this.DebugHandleUtc,
-                DebugMapUtc = this.DebugMapUtc,
-                DebugSeq = this.DebugSeq,
             };
         }
     }
