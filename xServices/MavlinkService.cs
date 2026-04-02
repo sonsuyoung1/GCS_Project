@@ -57,7 +57,6 @@ namespace GCS_Project.xServices
         private DateTime _rawLpnUtc = DateTime.MinValue;
         private DateTime _rawAttUtc = DateTime.MinValue;
         private DateTime _rawVfrUtc = DateTime.MinValue;
-        private long _altTraceSeq = 0;
         private void PublishState()
         {
             double lat, lon, relAlt, localAlt, roll, pitch, yaw, speed;
@@ -109,10 +108,6 @@ namespace GCS_Project.xServices
                 CurrentState.BatteryPercent = battery;
                 CurrentState.IsConnected = isConnected;
                 CurrentState.IsArmed = isArmed;
-
-                CurrentState.DebugSeq = rawSeq;
-                CurrentState.DebugRxUtc = new[] { gpUtc, lpnUtc, attUtc, vfrUtc }.Max();
-                CurrentState.DebugPublishUtc = DateTime.UtcNow;
             }
 
             if (shouldNotifyConnected)
