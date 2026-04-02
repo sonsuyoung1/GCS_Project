@@ -37,6 +37,18 @@ namespace GCS_Project.xServices
                             _rawIsConnected = true;
                             _rawIsArmed = isArmed;
                         }
+
+                        // 2. 드론 상태 모드 파싱
+                        string currentParsedMode = ParsePX4Mode(packet?.CustomMode ?? 0);
+
+                        // 드론의 실제 모드가 이전과 달라졌다면? ViewModel에 알림!
+                        if (_lastParsedMode != currentParsedMode)
+                        {
+                            _lastParsedMode = currentParsedMode;
+                            OnFlightModeChanged?.Invoke(currentParsedMode); // 이벤트 발생!
+                        }
+
+
                     })
                     .AddTo(_subs);
             }
@@ -203,6 +215,43 @@ namespace GCS_Project.xServices
                 .AddTo(_subs);
         }
 
+        private string ParsePX4Mode(uint customMode)
+        {
+            // PX4는 customMode 안에 Main Mode와 Sub Mode를 같이 뭉쳐서 보냅니다.
+            // 비트 연산(Shift)을 통해 두 가지를 각각 깔끔하게 뽑아냅니다.
+            uint mainMode = (customMode >> 16) & 0xFF;
+            uint subMode = (customMode >> 24) & 0xFF;
+
+            // 1. AUTO 모드 (자율 비행 관련 모드들은 다 이 안에 들어있습니다!)
+            if (mainMode == 4)
+            {
+                return subMode switch
+                {
+                    2 => "TAKEOFF",   // 이륙 중
+                    3 => "HOLD",      // 제자리 비행 (LOITER)
+                    4 => "MISSION",   // 미션 수행 중
+                    5 => "RTL",       // 복귀 중
+                    6 => "LAND",      // 착륙 중
+                    _ => "AUTO"       // 그 외 AUTO 상태
+                };
+            }
+
+            // 2. 수동 제어 및 기타 모드
+            return mainMode switch
+            {
+                1 => "MANUAL",    // 완전 수동
+                2 => "ALTCTL",    // 고도 유지 (조종기)
+                3 => "POSCTL",    // 위치 유지 (조종기)
+                7 => "ACRO",      // 아크로바틱
+                8 => "OFFBOARD",  // ⭐ 나중에 '자율 타격(Strike)' 시나리오 때 제일 중요해질 모드!
+                _ => "IDLE"       // 알 수 없는 상태
+            };
+        }
+
+        /// <summary>
+        /// GCS가 전송한 명령에 대한 드론의 응답(수락/거절 사유)을 파싱하여 로깅합니다.
+        /// </summary>
+        /// <param name="drone"></param>
         private void HookCommandAck(IClientDevice drone)
         {
             var cmd = drone.GetMicroservice<ICommandClient>();

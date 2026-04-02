@@ -33,7 +33,7 @@ namespace GCS_Project.xServices
         private Task? _linkWatchdogTask;
         private IDisposable? _uiUpdateTimer;
         private readonly object _stateLock = new();
-
+        private string _lastParsedMode = "IDLE";
         private IProtocolFactory? _protocol;
         private IProtocolRouter? _router;
         private IDeviceExplorer? _explorer;
@@ -134,6 +134,7 @@ namespace GCS_Project.xServices
         public event Action<string>? OnLogReceived;
         public event Action<int>? OnWaypointCountChanged;
         public event Action? OnMissionCompleted;
+        public event Action<string>? OnFlightModeChanged;
         #endregion
 
         #region [4. 초기화 및 서비스 제어 (Lifecycle)]

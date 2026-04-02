@@ -1,7 +1,12 @@
-﻿using GCS_Project.Models;
+﻿using Asv.Mavlink;
+using Asv.Mavlink.Minimal;
+using GCS_Project.Data;
+using GCS_Project.Models;
 using GCS_Project.xServices;
+using Newtonsoft.Json;
 using System;
 using System.Collections.ObjectModel;
+using System.Net.Http;
 using System.Text;
 using System.Windows;
 using System.Windows.Input;
@@ -28,6 +33,10 @@ namespace GCS_Project.ViewModels
         private bool _isFlyingHigh = false;
         private bool _isTakeoffMarkerDrawn = false;
         private readonly List<GeoPoint> _waypoints = new List<GeoPoint>();
+        private DateTime _lastMapUpdate = DateTime.MinValue;
+        private readonly DateTime _programStartTime = DateTime.Now;
+        private DateTime? _selectedHistoryDate = DateTime.Today;
+        private bool _isHistoryVisible = false;
         private string _userInputCommand = "";
         //scan 03/16
         private CancellationTokenSource? _scanCts;
@@ -117,6 +126,29 @@ namespace GCS_Project.ViewModels
             get => _headingOffset;
             set => SetProperty(ref _headingOffset, value);
         }
+        public DateTime? SelectedHistoryDate
+        {
+            get => _selectedHistoryDate;
+            set
+            {
+                if (SetProperty(ref _selectedHistoryDate, value))
+                {
+                    // 사용자가 달력에서 다른 날짜를 클릭했을 때,
+                    // 이미 지도에 궤적이 켜져 있다면 과거 궤적과 헷갈리지 않도록 싹 지워줍니다.
+                    if (_isHistoryVisible)
+                    {
+                        _isHistoryVisible = false;
+
+                        // 빈 리스트를 보내서 지도의 선을 지우라고 View(화면)에 명령합니다.
+                        HistoryPathRequested?.Invoke(new List<Tuple<double, double>>());
+
+                        // UI 스레드 안전하게 로그 출력
+                        Application.Current.Dispatcher.Invoke(() =>
+                            AppendLog("[시스템] 조회 날짜가 변경되어 지도의 궤적을 초기화합니다."));
+                    }
+                }
+            }
+        }
 
 
         // 버튼 활성화 조건들 
@@ -145,12 +177,12 @@ namespace GCS_Project.ViewModels
         public ICommand ClearWaypointsCommand { get; }
         public ICommand FollowCommand { get; }
         // public ICommand StopTrackingCommand { get; }
-        // 고도, 속도 조절 명령
         public ICommand IncreaseAltitudeCommand { get; }
         public ICommand DecreaseAltitudeCommand { get; }
         public ICommand IncreaseSpeedCommand { get; }
         public ICommand DecreaseSpeedCommand { get; }
         public ICommand SendAICommand { get; }
+        public ICommand ShowHistoryCommand { get; }
         #endregion
 
 
@@ -161,6 +193,7 @@ namespace GCS_Project.ViewModels
         public event Action<double, double, double>? PositionUpdated;
         public event Action<double, double>? TakeoffPointSet;
         public event Action<double, double>? PersonDetectedOnMap;
+        public event Action<List<Tuple<double, double>>>? HistoryPathRequested;
         #endregion
 
 
@@ -181,6 +214,7 @@ namespace GCS_Project.ViewModels
             FollowCommand = new RelayCommand(ExecuteFollow, () => IsFollowEnabled);
             StopMissionCommand = new RelayCommand(ExecuteStopMission, () => IsStopEnabled);
             // StopTrackingCommand = new RelayCommand(ExecuteStopTracking, () => IsStopEnabled);
+            ShowHistoryCommand = new RelayCommand(async () => await ExecuteShowHistory());
             SendAICommand = new RelayCommand(
                 async () => await ExecuteSendAICommand(),
                 () => !string.IsNullOrWhiteSpace(UserInputCommand)
@@ -192,8 +226,7 @@ namespace GCS_Project.ViewModels
                 {
                     Drone.TargetAltitude += 1.0;
 
-                    // 안전장치: 시동이 걸려있고 && TAKEOFF 모드일 때만 명령 전송!
-                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    if (Drone.IsArmed && (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD))
                     {
                         await _mavlinkService.ChangeTargetAltitude((float)Drone.TargetAltitude);
                     }
@@ -205,7 +238,7 @@ namespace GCS_Project.ViewModels
                 {
                     Drone.TargetAltitude -= 1.0;
 
-                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    if (Drone.IsArmed && (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD))
                     {
                         await _mavlinkService.ChangeTargetAltitude((float)Drone.TargetAltitude);
                     }
@@ -217,20 +250,19 @@ namespace GCS_Project.ViewModels
                 {
                     Drone.TargetSpeed += 1.0;
 
-                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    if (Drone.IsArmed && (FlightMode == MODE_TAKEOFF || FlightMode == MODE_MISSION))
                     {
                         await _mavlinkService.ChangeTargetSpeed((float)Drone.TargetSpeed);
                     }
                 }
             });
-
             DecreaseSpeedCommand = new RelayCommand(async () =>
             {
                 if (Drone.TargetSpeed > 1)
                 {
                     Drone.TargetSpeed -= 1.0;
 
-                    if (Drone.IsArmed && FlightMode == MODE_TAKEOFF)
+                    if (Drone.IsArmed && (FlightMode == MODE_TAKEOFF || FlightMode == MODE_MISSION))
                     {
                         await _mavlinkService.ChangeTargetSpeed((float)Drone.TargetSpeed);
                     }
@@ -251,6 +283,7 @@ namespace GCS_Project.ViewModels
                 _targetLostTimer.Stop();
             };
 
+
             // 생성자 안에서 시계 타이머를 돌려줍니다.
             _clockTimer = new System.Windows.Threading.DispatcherTimer
             {
@@ -259,6 +292,7 @@ namespace GCS_Project.ViewModels
 
             _clockTimer.Tick += (s, e) =>
             {
+                // "2024-05-18 14:30:45" 형태로 1초마다 업데이트
                 CurrentDateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             };
 
@@ -267,10 +301,20 @@ namespace GCS_Project.ViewModels
 
             // 서비스 시작 및 이벤트 구독
             InitializeService();
+            InitializeFlightSession();
         }
         #endregion
 
-
+        private void InitializeFlightSession()
+        {
+            using (var db = new AppDbContext())
+            {
+                // DB에서 가장 큰 FlightId를 찾아 +1 합니다. 없으면 1부터 시작.
+                int lastId = db.FlightLogs.Any() ? db.FlightLogs.Max(x => x.FlightId) : 0;
+                _currentFlightId = lastId + 1;
+            }
+            System.Diagnostics.Debug.WriteLine($"[세션] 이번 비행 아이디는 {_currentFlightId}입니다.");
+        }
         public void Dispose()
         {
             _targetLostTimer?.Stop();

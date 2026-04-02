@@ -269,6 +269,17 @@ namespace GCS_Project
                     await mapWebView.ExecuteScriptAsync("clearAllMapElements()");
                 });
             };
+
+            _viewModel.HistoryPathRequested += (path) =>
+            {
+                Dispatcher.InvokeAsync(async () =>
+                {
+                    if (_mapController != null)
+                    {
+                        await _mapController.DrawHistoryPath(path);
+                    }
+                });
+            };
         }
         #endregion
 

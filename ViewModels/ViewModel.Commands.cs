@@ -1,4 +1,5 @@
 ﻿using Asv.Mavlink.Minimal;
+using GCS_Project.Data;
 using GCS_Project.Models;
 using GCS_Project.xServices;
 using Newtonsoft.Json;
@@ -9,6 +10,8 @@ using System.Net.Http;
 using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
 
 namespace GCS_Project.ViewModels
 {
@@ -20,7 +23,7 @@ namespace GCS_Project.ViewModels
         {
             try
             {
-                // void 메서드이므로 Task.Run으로 감싸 UI 스레드 멈춤 완벽 방지!
+                // void 메서드이므로 Task.Run으로 감싸 UI 스레드 멈춤 완벽 방지
                 await Task.Run(() => _mavlinkService.StartMission());
                 FlightMode = MODE_MISSION;
                 AppendLog("미션을 시작합니다.");
@@ -104,7 +107,6 @@ namespace GCS_Project.ViewModels
             try
             {
                 await _mavlinkService.Landing();
-                FlightMode = MODE_IDLE;
 
                 await Task.Run(() => _mavlinkService.ClearWaypoints());
                 AllClearRequested?.Invoke();
@@ -214,6 +216,72 @@ namespace GCS_Project.ViewModels
             }
         }*/
 
+        private async Task ExecuteShowHistory()
+        {
+            if (_isHistoryVisible)
+            {
+                _isHistoryVisible = false;
+                HistoryPathRequested?.Invoke(new List<Tuple<double, double>>());
+                AppendLog("[시스템] 비행 궤적을 숨겼습니다.");
+                return;
+            }
+
+            try
+            {
+                await Task.Run(() =>
+                {
+                    using (var db = new AppDbContext())
+                    {
+                        List<FlightLog> logs;
+
+                        if (SelectedHistoryDate.HasValue)
+                        {
+                            DateTime targetDate = SelectedHistoryDate.Value.Date;
+                            DateTime nextDate = targetDate.AddDays(1);
+
+                            Application.Current.Dispatcher.Invoke(() =>
+                                AppendLog($"[시스템] {targetDate:yyyy-MM-dd}의 비행 기록을 분석 중입니다..."));
+
+                            logs = db.FlightLogs
+                                     .Where(x => x.Timestamp >= targetDate && x.Timestamp < nextDate)
+                                     .OrderBy(x => x.Timestamp)
+                                     .ToList();
+                        }
+                        else
+                        {
+                            Application.Current.Dispatcher.Invoke(() =>
+                                AppendLog("[시스템] 현재 세션의 비행 기록을 분석 중입니다..."));
+
+                            logs = db.FlightLogs
+                                     .Where(x => x.Timestamp >= _programStartTime)
+                                     .OrderBy(x => x.Timestamp)
+                                     .ToList();
+                        }
+
+                        if (logs.Count > 0)
+                        {
+                            var path = logs.Select(l => new Tuple<double, double>(l.Latitude, l.Longitude)).ToList();
+
+                            _isHistoryVisible = true;
+                            HistoryPathRequested?.Invoke(path);
+
+                            Application.Current.Dispatcher.Invoke(() =>
+                                AppendLog($"[성공] {logs.Count}개의 비행 궤적을 표시합니다."));
+                        }
+                        else
+                        {
+                            Application.Current.Dispatcher.Invoke(() =>
+                                AppendLog("[알림] 표시할 비행 기록이 없습니다."));
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DB 에러] {ex.Message}");
+                AppendLog($"[에러] 데이터 변환 실패: {ex.Message}");
+            }
+        }
         private void NotifyCommandStates()
         {
             (StartMissionCommand as RelayCommand)?.NotifyCanExecuteChanged();
@@ -226,6 +294,11 @@ namespace GCS_Project.ViewModels
             (UndoWaypointCommand as RelayCommand)?.NotifyCanExecuteChanged();
             (ClearWaypointsCommand as RelayCommand)?.NotifyCanExecuteChanged();
             (FollowCommand as RelayCommand)?.NotifyCanExecuteChanged();
+
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                CommandManager.InvalidateRequerySuggested();
+            });
         }
 
         private async Task ExecuteScan(double seconds)

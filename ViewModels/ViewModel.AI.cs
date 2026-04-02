@@ -1,4 +1,5 @@
-﻿using GCS_Project.Models;
+﻿using GCS_Project.Data;
+using GCS_Project.Models;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -27,8 +28,19 @@ namespace GCS_Project.ViewModels
 
             AppendLog($"[{DateTime.Now:HH:mm:ss}] USER >> {userMsg}");
 
+            // [DB 저장] 사용자의 명령 기록
+            await Task.Run(() => {
+                using (var db = new AppDbContext())
+                {
+                    db.SystemLogs.Add(new SystemLog { Timestamp = DateTime.Now, Sender = "USER", Message = userMsg });
+                    db.SaveChanges();
+                }
+            });
+
+            // 1. AI에게 JSON 형태의 응답을 받아옵니다.
             string aiJsonResponse = await GetOpenAIResponse(userMsg);
 
+            // [추가된 방어막] 통신 실패 메시지가 오면 JSON 파싱 안 하고 바로 출력!
             if (aiJsonResponse.StartsWith("[통신 실패]") || aiJsonResponse.StartsWith("[오류 발생]"))
             {
                 AppendLog(aiJsonResponse);

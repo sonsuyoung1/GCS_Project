@@ -8,11 +8,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 using System.Windows;
+using GCS_Project.Data;
 
 namespace GCS_Project.ViewModels
 {
     public partial class ViewModel
     {
+        private DateTime _lastDbSaveTime = DateTime.MinValue;
+
         #region [이벤트 핸들러 (Event Handlers)]
         //현재 버튼 상태 캡처 메서드 추가 03/22
         private CommandStateSnapshot CaptureCommandState()
@@ -148,6 +151,31 @@ namespace GCS_Project.ViewModels
                         // 드론에게 실시간 좌표 전송!
                         await _mavlinkService.GoTo(lat, lng);
                     }
+
+                    _ = Task.Run(() =>
+                    {
+                        try
+                        {
+                            using (var db = new AppDbContext())
+                            {
+                                var newTargetLog = new TargetLog
+                                {
+                                    Timestamp = DateTime.Now,
+                                    TargetType = type, // "Tank", "Vehicle" 등 YOLO가 보내준 타입
+                                    Latitude = lat,
+                                    Longitude = lng,
+                                    IsStriked = false  // 방금 발견한 거니까 아직 타격 전(false)으로 저장!
+                                };
+
+                                db.TargetLogs.Add(newTargetLog);
+                                db.SaveChanges(); // DB에 타겟 발견 기록 쾅!
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DB 오류] 타겟 저장 실패: {ex.Message}");
+                        }
+                    });
                 });
             };*/
         }
@@ -225,6 +253,48 @@ namespace GCS_Project.ViewModels
                 _isTakeoffMarkerDrawn = true;
             }
 
+            if ((DateTime.UtcNow - _lastDbSaveTime).TotalMilliseconds > 1000)
+            {
+                _lastDbSaveTime = DateTime.UtcNow;
+
+                var lat = state.Latitude;
+                var lng = state.Longitude;
+                var alt = state.Altitude;
+                var speed = state.Speed;
+                var battery = state.BatteryPercent;
+                var flightMode = this.FlightMode;
+
+                if (!(lat == 0 && lng == 0))
+                {
+                    Task.Run(() =>
+                    {
+                        try
+                        {
+                            using (var db = new GCS_Project.Data.AppDbContext())
+                            {
+                                var newLog = new FlightLog
+                                {
+                                    Timestamp = DateTime.Now,
+                                    Latitude = lat,
+                                    Longitude = lng,
+                                    Altitude = alt,
+                                    Speed = speed,
+                                    BatteryPercent = battery,
+                                    FlightMode = flightMode
+                                };
+
+                                db.FlightLogs.Add(newLog);
+                                db.SaveChanges();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"DB 저장 실패: {ex.Message}");
+                        }
+                    });
+                }
+            }
+
             RefreshCommandStatesIfNeeded();
         }
 
@@ -293,7 +363,7 @@ namespace GCS_Project.ViewModels
         // 수동 조종 엔진 켜기/끄기
         public async Task ToggleManualControl(bool turnOn)
         {
-            if (turnOn)
+            try
             {
                 await _mavlinkService.SetFlightMode(
                     MavModeFlag.MavModeFlagCustomModeEnabled,
@@ -308,7 +378,7 @@ namespace GCS_Project.ViewModels
                 FlightMode = MODE_MANUAL;
                 AppendLog("[시스템] 수동 조종 모드 진입");
             }
-            else
+            catch (Exception ex)
             {
                 // 1. 먼저 입력을 중립으로 돌림
                 _mavlinkService.SetJoystick(0, 0, 500, 0);
