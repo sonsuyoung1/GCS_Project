@@ -89,6 +89,46 @@ namespace GCS_Project.ViewModels
                 });
             };
 
+            _mavlinkService.OnFlightModeChanged += (newMode) =>
+            {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    switch (newMode)
+                    {
+                        case "TAKEOFF":
+                            FlightMode = MODE_TAKEOFF;
+                            break;
+
+                        case "HOLD":
+                        case "POSCTL":
+                        case "ALTCTL":
+                            FlightMode = MODE_HOLD;
+                            break;
+
+                        case "MISSION":
+                            FlightMode = MODE_MISSION;
+                            break;
+
+                        case "MANUAL":
+                            FlightMode = MODE_MANUAL;
+                            break;
+
+                        case "RTL":
+                            FlightMode = MODE_HOLD;
+                            break;
+
+                        case "LAND":
+                            FlightMode = MODE_TAKEOFF;
+                            break;
+
+                        default:
+                            break;
+                    }
+
+                    RefreshCommandStatesIfNeeded();
+                });
+            };
+
             // 지연 해결할때까지 주석처리
             /*_mavlinkService.OnLogReceived += (message) =>
             {
@@ -130,54 +170,6 @@ namespace GCS_Project.ViewModels
             {
                 _mavStarting = false;
             }
-            
-            // 타겟 업데이트
-            /*_mavlinkService.OnTargetLocationUpdated += (id, lat, lng, type, isTracked) =>
-            {
-                Application.Current.Dispatcher.BeginInvoke(async () =>
-                {
-                    // 1. 지도에 마커 표시 (기존 유지)
-                    PersonDetectedOnMap?.Invoke(lat, lng);
-
-                    if (id == SelectedTarget?.ID)
-                    {
-                        _targetLostTimer.Stop(); // 타이머 리셋
-                        _targetLostTimer.Start();
-                    }
-
-                    // 2. 현재 추적 모드이고, 이 타겟이 내가 선택한 타겟이라면?
-                    if (FlightMode == "TRACKING" && SelectedTarget != null && SelectedTarget.ID == id)
-                    {
-                        // 드론에게 실시간 좌표 전송!
-                        await _mavlinkService.GoTo(lat, lng);
-                    }
-
-                    _ = Task.Run(() =>
-                    {
-                        try
-                        {
-                            using (var db = new AppDbContext())
-                            {
-                                var newTargetLog = new TargetLog
-                                {
-                                    Timestamp = DateTime.Now,
-                                    TargetType = type, // "Tank", "Vehicle" 등 YOLO가 보내준 타입
-                                    Latitude = lat,
-                                    Longitude = lng,
-                                    IsStriked = false  // 방금 발견한 거니까 아직 타격 전(false)으로 저장!
-                                };
-
-                                db.TargetLogs.Add(newTargetLog);
-                                db.SaveChanges(); // DB에 타겟 발견 기록 쾅!
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[DB 오류] 타겟 저장 실패: {ex.Message}");
-                        }
-                    });
-                });
-            };*/
         }
 
         private void ApplyAllState(DroneState state)
@@ -316,6 +308,7 @@ namespace GCS_Project.ViewModels
                     existing.By = incoming.By;
                     existing.Bw = incoming.Bw;
                     existing.Bh = incoming.Bh;
+                    existing.IsBeingTracked = incoming.IsBeingTracked;
                 }
                 else
                 {

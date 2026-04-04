@@ -153,16 +153,50 @@ namespace GCS_Project.ViewModels
 
 
         // 버튼 활성화 조건들 
-        public bool IsMissionStartEnabled => (FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && Drone.IsConnected && Drone.IsArmed;
-        public bool IsTakeoffEnabled => (FlightMode == MODE_IDLE) && Drone.IsConnected && Drone.IsArmed;
-        public bool IsLandingEnabled => (FlightMode == MODE_TAKEOFF) && Drone.IsConnected && Drone.IsArmed;
-        public bool IsRtlEnabled => (FlightMode == MODE_TAKEOFF || FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING) && Drone.IsConnected && Drone.IsArmed;
-        public bool IsUndoEnabled => (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && FlightMode != MODE_MISSION;
-        public bool IsClearEnabled => (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF) && _currentWaypointCount > 0 && FlightMode != MODE_MISSION;
-        public bool IsFollowEnabled => SelectedTarget != null && (FlightMode != MODE_IDLE && FlightMode != MODE_TRACKING) && Drone.IsConnected && Drone.IsArmed;
-        public bool IsStopEnabled => (FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING);
-        public bool IsArmEnabled => (FlightMode == MODE_IDLE) && Drone.IsConnected && !Drone.IsArmed;
-        public bool IsDisarmEnabled => FlightMode == MODE_IDLE && Drone.IsConnected && Drone.IsArmed;
+        public bool IsArmEnabled =>
+            (FlightMode == MODE_IDLE) && Drone.IsConnected && !Drone.IsArmed;
+
+        public bool IsDisarmEnabled =>
+            (FlightMode == MODE_IDLE) && Drone.IsConnected && Drone.IsArmed;
+
+        public bool IsTakeoffEnabled =>
+            (FlightMode == MODE_IDLE) && Drone.IsConnected && Drone.IsArmed;
+
+        public bool IsMissionStartEnabled =>
+            (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD) &&
+            _currentWaypointCount > 0 &&
+            Drone.IsConnected &&
+            Drone.IsArmed;
+
+        public bool IsLandingEnabled =>
+            (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD) &&
+            Drone.IsConnected &&
+            Drone.IsArmed;
+
+        public bool IsRtlEnabled =>
+            (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD || FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING) &&
+            Drone.IsConnected &&
+            Drone.IsArmed;
+
+        public bool IsUndoEnabled =>
+            (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD) &&
+            _currentWaypointCount > 0 &&
+            FlightMode != MODE_MISSION;
+
+        public bool IsClearEnabled =>
+            (FlightMode == MODE_IDLE || FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD) &&
+            _currentWaypointCount > 0 &&
+            FlightMode != MODE_MISSION;
+
+        public bool IsFollowEnabled =>
+            SelectedTarget != null &&
+            (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD || FlightMode == MODE_MISSION) &&
+            Drone.IsConnected &&
+            Drone.IsArmed;
+
+        public bool IsStopEnabled =>
+            (FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING) &&
+            Drone.IsConnected;
         #endregion
 
 
