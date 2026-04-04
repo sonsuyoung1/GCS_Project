@@ -15,11 +15,19 @@ namespace GCS_Project.Models
         private bool _isBeingTracked;
         private double _bx, _by, _bw, _bh;
 
-        // 1. 객체 고유 ID (YOLO/Tracker에서 부여한 번호)
-        public int ID { get; set; }
+        private int _id;
+        public int ID
+        {
+            get => _id;
+            set { _id = value; OnPropertyChanged(); }
+        }
 
-        // 2. 객체 종류 (예: Person, Car 등)
-        public string TargetType { get; set; } = "Unknown";
+        private string _targetType = "Unknown";
+        public string TargetType
+        {
+            get => _targetType;
+            set { _targetType = value; OnPropertyChanged(); }
+        }
 
         // 3. 위도 (실시간 갱신)
         public double Lat
