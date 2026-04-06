@@ -15,19 +15,11 @@ namespace GCS_Project.Models
         private bool _isBeingTracked;
         private double _bx, _by, _bw, _bh;
 
-        private int _id;
-        public int ID
-        {
-            get => _id;
-            set { _id = value; OnPropertyChanged(); }
-        }
+        // 1. 객체 고유 ID (YOLO/Tracker에서 부여한 번호)
+        public int ID { get; set; }
 
-        private string _targetType = "Unknown";
-        public string TargetType
-        {
-            get => _targetType;
-            set { _targetType = value; OnPropertyChanged(); }
-        }
+        // 2. 객체 종류 (예: Person, Car 등)
+        public string TargetType { get; set; } = "Unknown";
 
         // 3. 위도 (실시간 갱신)
         public double Lat
@@ -51,10 +43,29 @@ namespace GCS_Project.Models
         }
 
         // ===== YOLO BBOX 위치 저장=====
-        public double Bx { get => _bx; set { _bx = value; OnPropertyChanged(); } }
-        public double By { get => _by; set { _by = value; OnPropertyChanged(); } }
-        public double Bw { get => _bw; set { _bw = value; OnPropertyChanged(); } }
-        public double Bh { get => _bh; set { _bh = value; OnPropertyChanged(); } }
+        public double Bx
+        {
+            get => _bx;
+            set { _bx = value; OnPropertyChanged(); }
+        }
+
+        public double By
+        {
+            get => _by;
+            set { _by = value; OnPropertyChanged(); }
+        }
+
+        public double Bw
+        {
+            get => _bw;
+            set { _bw = value; OnPropertyChanged(); }
+        }
+
+        public double Bh
+        {
+            get => _bh;
+            set { _bh = value; OnPropertyChanged(); }
+        }
 
         // UI 갱신을 위한 인터페이스 구현
         public event PropertyChangedEventHandler? PropertyChanged;

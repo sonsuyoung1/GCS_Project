@@ -308,7 +308,6 @@ namespace GCS_Project.ViewModels
                     existing.By = incoming.By;
                     existing.Bw = incoming.Bw;
                     existing.Bh = incoming.Bh;
-                    existing.IsBeingTracked = incoming.IsBeingTracked;
                 }
                 else
                 {

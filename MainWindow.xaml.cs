@@ -26,9 +26,9 @@ namespace GCS_Project
         private OverlayWindow? _overlayWindow;
         private bool _mapBridgeInitialized = false;
         // ===== Video Frame Size (YOLO 입력 해상도) =====
-        private const double FRAME_WIDTH = 640.0;
-        private const double FRAME_HEIGHT = 480.0;
-        private bool _overlayDirty = false;
+        private const double FRAME_WIDTH = 1920.0;
+        private const double FRAME_HEIGHT = 1080.0;
+
         private System.Windows.Threading.DispatcherTimer? _overlayTimer;
 
         private int? _selectedTargetId = null;
@@ -43,11 +43,11 @@ namespace GCS_Project
             _viewModel = new ViewModel();
             this.DataContext = _viewModel;
 
-            _viewModel.DetectedTargets.CollectionChanged += DetectedTargets_CollectionChanged;
-            foreach (var t in _viewModel.DetectedTargets)
+            _viewModel.DetectedTargets.CollectionChanged += (s, e) =>
             {
-                t.PropertyChanged += DetectedTarget_PropertyChanged;
-            }
+                RedrawBboxes();
+            };
+
             // ===== [VIDEO INIT] =====
             Core.Initialize();
             _libVLC = new LibVLC("--network-caching=100");
@@ -90,26 +90,6 @@ namespace GCS_Project
             HookOverlayEvents();
 
             UpdateOverlayBounds();
-
-            _overlayTimer = new System.Windows.Threading.DispatcherTimer
-            {
-                Interval = TimeSpan.FromMilliseconds(33)
-            };
-
-            _overlayTimer.Tick += (s, args) =>
-            {
-                if (_overlayWindow == null || _viewModel == null)
-                    return;
-
-                if (!_overlayDirty)
-                    return;
-
-                _overlayDirty = false;
-                UpdateOverlayBounds();
-                RedrawBboxes();
-            };
-
-            _overlayTimer.Start();
 
             await Dispatcher.InvokeAsync(
                 UpdateOverlayBounds,
@@ -382,47 +362,6 @@ namespace GCS_Project
 
 
         #region [6. 이벤트 핸들러 (Event Handlers)]
-        //각 타겟 속성 변경 감지
-        private void DetectedTarget_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(DetectedTarget.Bx) ||
-                e.PropertyName == nameof(DetectedTarget.By) ||
-                e.PropertyName == nameof(DetectedTarget.Bw) ||
-                e.PropertyName == nameof(DetectedTarget.Bh) ||
-                e.PropertyName == nameof(DetectedTarget.TargetType) ||
-                e.PropertyName == nameof(DetectedTarget.IsBeingTracked))
-            {
-                _overlayDirty = true;
-            }
-        }
-        //컬렉션 추가/삭제 시 PropertyChanged 연결/해제
-        private void DetectedTargets_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
-        {
-            if (e.NewItems != null)
-            {
-                foreach (var item in e.NewItems)
-                {
-                    if (item is DetectedTarget t)
-                    {
-                        t.PropertyChanged += DetectedTarget_PropertyChanged;
-                    }
-                }
-            }
-
-            if (e.OldItems != null)
-            {
-                foreach (var item in e.OldItems)
-                {
-                    if (item is DetectedTarget t)
-                    {
-                        t.PropertyChanged -= DetectedTarget_PropertyChanged;
-                    }
-                }
-            }
-            _overlayDirty = true;
-
-        }
-
         /// <summary>
         /// 지도(JS)에서 클릭하여 발생한 이벤트를 C# ViewModel로 전달합니다.
         /// </summary>
@@ -500,16 +439,6 @@ namespace GCS_Project
                 _libVLC?.Dispose();
             }
             catch { }
-
-            if (_viewModel != null)
-            {
-                _viewModel.DetectedTargets.CollectionChanged -= DetectedTargets_CollectionChanged;
-
-                foreach (var t in _viewModel.DetectedTargets)
-                {
-                    t.PropertyChanged -= DetectedTarget_PropertyChanged;
-                }
-            }
 
             base.OnClosed(e);
         }
