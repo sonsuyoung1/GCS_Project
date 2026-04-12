@@ -50,7 +50,7 @@ namespace GCS_Project
             }
             // ===== [VIDEO INIT] =====
             Core.Initialize();
-            _libVLC = new LibVLC("--network-caching=100");
+            _libVLC = new LibVLC("--network-caching=0");
 
             // VideoView에 플레이어 연결
             _mp1 = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
@@ -93,7 +93,7 @@ namespace GCS_Project
 
             _overlayTimer = new System.Windows.Threading.DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(33)
+                Interval = TimeSpan.FromMilliseconds(16)
             };
 
             _overlayTimer.Tick += (s, args) =>
