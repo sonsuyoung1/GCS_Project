@@ -179,43 +179,25 @@ namespace GCS_Project.ViewModels
             }
         }
 
-        // 9. 객체 추적 실행
-        private async void ExecuteFollow()
+        private async void ExecuteStrike()
         {
-            try
-            {
-                var target = SelectedTarget;
-                if (target == null) return;
+            if (SelectedTarget == null) return;
 
-                await Task.Run(() => _mavlinkService.StopMission());
-                await _mavlinkService.GoTo(target.Lat, target.Lng, (float)Drone.TargetAltitude);
+            FlightMode = MODE_STRIKE; // 모드 변경 (이 순간 스냅샷이 변하며 STOP 버튼이 활성화됨)
+            AppendLog($"[작전] 타겟(ID:{SelectedTarget.ID})으로 자폭 돌격합니다!");
 
-                FlightMode = MODE_TRACKING;
-                AppendLog($"[시스템] 타겟 추적 모드: ID {target.ID}");
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"[오류] 타겟 추적 실패: {ex.Message}");
-            }
+            // 실제 MAVLink 좌표 전송
+            await _mavlinkService.GoTo(SelectedTarget.Lat, SelectedTarget.Lng, (float)Drone.TargetAltitude);
         }
 
-        /*// 10. 객체 추적 중단
-        private async void ExecuteStopTracking()
+        private async void ExecuteStopStrike()
         {
-            try
-            {
-                await Task.Run(() => _mavlinkService.StopMission());
-                await _mavlinkService.StopTracking();
+            FlightMode = MODE_HOLD; // 모드 복구 (STRIKE 버튼이 다시 활성화될 준비를 함)
+            AppendLog("[작전] 타격 중지. 제자리 비행으로 전환합니다.");
 
-                FlightMode = "LOITER";
-                AppendLog("[시스템] 추적 자율 주행 중단.");
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"[오류] 추적 중단 실패: {ex.Message}");
-            }
-        }*/
-
+            await _mavlinkService.Hold();
+        }
+        //   비행 경로 찍어주는 명령
         private async Task ExecuteShowHistory()
         {
             if (_isHistoryVisible)

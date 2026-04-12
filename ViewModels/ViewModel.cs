@@ -38,6 +38,8 @@ namespace GCS_Project.ViewModels
         private DateTime? _selectedHistoryDate = DateTime.Today;
         private bool _isHistoryVisible = false;
         private string _userInputCommand = "";
+
+
         //scan 03/16
         private CancellationTokenSource? _scanCts;
         private bool _isScanning = false;
@@ -45,11 +47,13 @@ namespace GCS_Project.ViewModels
         private const string MODE_IDLE = "IDLE";
         private const string MODE_TAKEOFF = "TAKEOFF";
         private const string MODE_MISSION = "MISSION";
-        private const string MODE_TRACKING = "TRACKING";
+        private const string MODE_STRIKE = "STRIKE";
         private const string MODE_MANUAL = "MANUAL";
         private const string MODE_HOLD = "HOLD";
         private int _currentFlightId;
-        //버튼 상태에 영향을 주는 값만 따로 스냅샷으로 묶고, 그 스냅샷이 바뀔 때만 NotifyCommandStates()를 호출
+
+
+        // 버튼 상태에 영향을 주는 값만 따로 스냅샷으로 묶고, 그 스냅샷이 바뀔 때만 NotifyCommandStates()를 호출
         private sealed record CommandStateSnapshot(
             string FlightMode,
             bool IsConnected,
@@ -195,7 +199,19 @@ namespace GCS_Project.ViewModels
             Drone.IsArmed;
 
         public bool IsStopEnabled =>
-            (FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING) &&
+            (FlightMode == MODE_MISSION) &&
+            Drone.IsConnected;
+
+        // 
+        public bool IsStrikeEnabled =>
+            SelectedTarget != null && 
+            (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD || FlightMode == MODE_MISSION) &&
+            Drone.IsConnected && 
+            Drone.IsArmed && 
+            FlightMode != MODE_STRIKE;
+
+        public bool IsStopStrikeEnabled =>
+            FlightMode == MODE_STRIKE &&        // 현재 타격 모드일 때만 활성화
             Drone.IsConnected;
         #endregion
 
@@ -246,9 +262,9 @@ namespace GCS_Project.ViewModels
             RtlCommand = new RelayCommand(ExecuteRtl, () => IsRtlEnabled);
             UndoWaypointCommand = new RelayCommand(ExecuteUndoWaypoint, () => IsUndoEnabled);
             ClearWaypointsCommand = new RelayCommand(ExecuteClearWaypoints, () => IsClearEnabled);
-            FollowCommand = new RelayCommand(ExecuteFollow, () => IsFollowEnabled);
             StopMissionCommand = new RelayCommand(ExecuteStopMission, () => IsStopEnabled);
-            // StopTrackingCommand = new RelayCommand(ExecuteStopTracking, () => IsStopEnabled);
+            StrikeCommand = new RelayCommand(ExecuteStrike, () => IsStrikeEnabled);
+            StopStrikeCommand = new RelayCommand(ExecuteStopStrike, () => IsStopStrikeEnabled);
             ShowHistoryCommand = new RelayCommand(async () => await ExecuteShowHistory());
             SendAICommand = new RelayCommand(
                 async () => await ExecuteSendAICommand(),
