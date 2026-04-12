@@ -78,7 +78,7 @@ namespace GCS_Project
 
             await InitializeMapAsync();
 
-            PlayRtpStream(_mp1);
+            // PlayRtpStream(_mp1);
 
             _overlayWindow = new OverlayWindow
             {
