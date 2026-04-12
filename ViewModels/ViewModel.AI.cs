@@ -94,12 +94,12 @@ namespace GCS_Project.ViewModels
                         ExecuteRtl();
                         break;
 
-                    case "STRIKE":
+/*                    case "STRIKE":
                         if (SelectedTarget != null)
                             ExecuteFollow();
                         else
                             AppendLog("[시스템 오류] 요격할 타겟이 선택되지 않았습니다.");
-                        break;
+                        break;*/
 
                     case "ASCEND":
                         if (aiCommand.Value > 0)

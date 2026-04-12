@@ -179,24 +179,97 @@ namespace GCS_Project.ViewModels
             }
         }
 
+        // 드론과 물체의 거리 계산
+        private double CalculateDistance(double lat1, double lon1, double lat2, double lon2)
+        {
+            const double R = 6371000.0; // 지구의 반지름 (미터)
+
+            double dLat = (lat2 - lat1) * Math.PI / 180.0;
+            double dLon = (lon2 - lon1) * Math.PI / 180.0;
+
+            double radLat1 = lat1 * Math.PI / 180.0;
+            double radLat2 = lat2 * Math.PI / 180.0;
+
+            double a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                       Math.Cos(radLat1) * Math.Cos(radLat2) *
+                       Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+
+            double c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+
+            return R * c;
+        }
+
+        // 9. 타격 명령 실행 메서드
         private async void ExecuteStrike()
         {
             if (SelectedTarget == null) return;
 
-            FlightMode = MODE_STRIKE; // 모드 변경 (이 순간 스냅샷이 변하며 STOP 버튼이 활성화됨)
-            AppendLog($"[작전] 타겟(ID:{SelectedTarget.ID})으로 자폭 돌격합니다!");
+            IsStriking = true; // 타격 상태 ON
+            var targetToStrike = SelectedTarget;
 
-            // 실제 MAVLink 좌표 전송
-            await _mavlinkService.GoTo(SelectedTarget.Lat, SelectedTarget.Lng, (float)Drone.TargetAltitude);
+            // 로그 도배를 막기 위한 플래그
+            bool impactImminentLogged = false;
+
+            AppendLog($"[작전] 타겟(ID:{targetToStrike.ID})으로 종말 유도(자폭) 돌격을 개시합니다!");
+
+            // 타격 시 돌진 속도를 최대로 올림 (20m/s)
+            await _mavlinkService.ChangeTargetSpeed(20.0f);
+
+            // 실시간 추적 루프 (Background Task)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (IsStriking)
+                    {
+                        // 타겟 최신화
+                        if (SelectedTarget != null)
+                        {
+                            targetToStrike = SelectedTarget;
+                        }
+
+                        // 1. 현재 드론 위치와 타겟 위치의 거리(m) 계산
+                        double distance = CalculateDistance(Drone.Latitude, Drone.Longitude, targetToStrike.Lat, targetToStrike.Lng);
+
+                        // 2. 거리가 3m 이하로 들어왔고, 아직 알림을 안 띄웠다면?
+                        if (distance <= 3.0 && !impactImminentLogged)
+                        {
+                            impactImminentLogged = true; // 알림 잠금 (한 번만 실행되도록)
+
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                AppendLog("🚨 [경고] 타겟 명중 임박 (Impact Imminent)! 충돌 대비!");
+
+                                // (추가 팁) 만약 화면을 빨갛게 번쩍이게 하거나 경고음을 넣고 싶다면
+                                // 이 위치에서 이벤트를 발생시키거나 변수를 조작하면 됩니다!
+                            });
+                        }
+
+                        // 고도를 0(지면)으로 설정하여 돌진
+                        await _mavlinkService.GoTo(targetToStrike.Lat, targetToStrike.Lng, 0f);
+
+                        // 0.5초 대기 (2Hz 갱신)
+                        await Task.Delay(500);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Application.Current.Dispatcher.Invoke(() =>
+                        AppendLog($"[오류] 타격 유도 루프 중단: {ex.Message}"));
+                }
+            });
         }
 
+        // 10. 타격 명령 취소 메서드
         private async void ExecuteStopStrike()
         {
-            FlightMode = MODE_HOLD; // 모드 복구 (STRIKE 버튼이 다시 활성화될 준비를 함)
+            IsStriking = false; // 타격 중 상태 스위치 OFF
+            RefreshCommandStatesIfNeeded();
             AppendLog("[작전] 타격 중지. 제자리 비행으로 전환합니다.");
 
             await _mavlinkService.Hold();
         }
+
         //   비행 경로 찍어주는 명령
         private async Task ExecuteShowHistory()
         {
@@ -275,7 +348,8 @@ namespace GCS_Project.ViewModels
             (RtlCommand as RelayCommand)?.NotifyCanExecuteChanged();
             (UndoWaypointCommand as RelayCommand)?.NotifyCanExecuteChanged();
             (ClearWaypointsCommand as RelayCommand)?.NotifyCanExecuteChanged();
-            (FollowCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (StrikeCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (StopStrikeCommand as RelayCommand)?.NotifyCanExecuteChanged();
 
             Application.Current.Dispatcher.Invoke(() =>
             {

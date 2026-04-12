@@ -25,7 +25,8 @@ namespace GCS_Project.ViewModels
                 Drone.IsConnected,
                 Drone.IsArmed,
                 _currentWaypointCount,
-                SelectedTarget != null
+                SelectedTarget != null, 
+                IsStriking
             );
         }
         //필요할 때만 버튼 갱신하는 메서드 추가
@@ -59,6 +60,8 @@ namespace GCS_Project.ViewModels
 
             ChatLog = _chatLogBuffer.ToString();
         }
+
+        // 초기화 서비스 메서드
         private async void InitializeService()
         {
             if (_mavStarting) return;
@@ -222,6 +225,12 @@ namespace GCS_Project.ViewModels
             {
                 _isFlyingHigh = false;
 
+                if (IsStriking)
+                {
+                    IsStriking = false;
+                    AppendLog("[시스템] 기체 시동이 꺼져 타격 모드를 자동 해제합니다.");
+                }
+
                 if (FlightMode != MODE_IDLE)
                 {
                     FlightMode = MODE_IDLE;
@@ -326,6 +335,12 @@ namespace GCS_Project.ViewModels
                     if (SelectedTarget?.ID == existing.ID)
                     {
                         SelectedTarget = null;
+
+                        if (IsStriking)
+                        {
+                            AppendLog("[경고] 돌진 중 타겟을 시야에서 상실했습니다! (마지막 좌표로 계속 비행합니다)");
+                            // 원한다면 여기에 ExecuteStopStrike(); 를 호출해 급브레이크를 밟게 할 수도 있습니다.
+                        }
                     }
 
                     _detectedTargets.RemoveAt(i);

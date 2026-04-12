@@ -38,7 +38,7 @@ namespace GCS_Project.ViewModels
         private DateTime? _selectedHistoryDate = DateTime.Today;
         private bool _isHistoryVisible = false;
         private string _userInputCommand = "";
-
+        private bool _isStriking = false;
 
         //scan 03/16
         private CancellationTokenSource? _scanCts;
@@ -59,7 +59,8 @@ namespace GCS_Project.ViewModels
             bool IsConnected,
             bool IsArmed,
             int WaypointCount,
-            bool HasSelectedTarget
+            bool HasSelectedTarget, 
+            bool IsStriking
         );
         private CommandStateSnapshot? _lastCommandStateSnapshot;
 
@@ -116,6 +117,18 @@ namespace GCS_Project.ViewModels
             set
             {
                 if (SetProperty(ref _selectedTarget, value))
+                {
+                    RefreshCommandStatesIfNeeded();
+                }
+            }
+        }
+        public bool IsStriking
+        {
+            get => _isStriking;
+            set
+            {
+                // 값이 바뀌면 화면에 알림을 주고, 버튼 활성화 여부를 다시 계산함
+                if (SetProperty(ref _isStriking, value))
                 {
                     RefreshCommandStatesIfNeeded();
                 }
@@ -178,7 +191,7 @@ namespace GCS_Project.ViewModels
             Drone.IsArmed;
 
         public bool IsRtlEnabled =>
-            (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD || FlightMode == MODE_MISSION || FlightMode == MODE_TRACKING) &&
+            (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD || FlightMode == MODE_MISSION) &&
             Drone.IsConnected &&
             Drone.IsArmed;
 
@@ -192,26 +205,21 @@ namespace GCS_Project.ViewModels
             _currentWaypointCount > 0 &&
             FlightMode != MODE_MISSION;
 
-        public bool IsFollowEnabled =>
-            SelectedTarget != null &&
-            (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD || FlightMode == MODE_MISSION) &&
-            Drone.IsConnected &&
-            Drone.IsArmed;
 
         public bool IsStopEnabled =>
             (FlightMode == MODE_MISSION) &&
             Drone.IsConnected;
 
-        // 
+        
         public bool IsStrikeEnabled =>
             SelectedTarget != null && 
             (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD || FlightMode == MODE_MISSION) &&
             Drone.IsConnected && 
-            Drone.IsArmed && 
-            FlightMode != MODE_STRIKE;
+            Drone.IsArmed &&
+            !_isStriking;
 
         public bool IsStopStrikeEnabled =>
-            FlightMode == MODE_STRIKE &&        // 현재 타격 모드일 때만 활성화
+            _isStriking &&        // 현재 타격 모드일 때만 활성화
             Drone.IsConnected;
         #endregion
 
@@ -226,14 +234,14 @@ namespace GCS_Project.ViewModels
         public ICommand RtlCommand { get; }
         public ICommand UndoWaypointCommand { get; }
         public ICommand ClearWaypointsCommand { get; }
-        public ICommand FollowCommand { get; }
-        // public ICommand StopTrackingCommand { get; }
         public ICommand IncreaseAltitudeCommand { get; }
         public ICommand DecreaseAltitudeCommand { get; }
         public ICommand IncreaseSpeedCommand { get; }
         public ICommand DecreaseSpeedCommand { get; }
         public ICommand SendAICommand { get; }
         public ICommand ShowHistoryCommand { get; }
+        public ICommand StrikeCommand { get; }
+        public ICommand StopStrikeCommand { get; }
         #endregion
 
 
@@ -323,11 +331,11 @@ namespace GCS_Project.ViewModels
 
             _targetLostTimer = new System.Timers.Timer(3000); // 3초 동안 데이터 없으면 소실 판단
             _targetLostTimer.Elapsed += (s, e) => {
-                if (FlightMode == MODE_TRACKING)
+                if (FlightMode == MODE_STRIKE)
                 {
                     Application.Current.Dispatcher.BeginInvoke(() =>
                     {
-                        FlightMode = MODE_TAKEOFF;
+                        FlightMode = MODE_HOLD;
                         AppendLog("[경고] 타겟을 놓쳤습니다. 추적을 중단하고 대기합니다.");
                     });
                 }

@@ -248,6 +248,41 @@ namespace GCS_Project.xServices
                 OnLogReceived?.Invoke($"[오류] 고도 변경 명령 실패: {ex.Message}");
             }
         }
+
+        public async Task Hold()
+        {
+            // 1. 기체 연결 상태 확인
+            if (_drone == null || !CurrentState.IsConnected)
+            {
+                OnLogReceived?.Invoke("[경고] 기체가 연결되지 않아 정지 명령(Hold)을 수행할 수 없습니다.");
+                return;
+            }
+
+            // 2. 명령 전송 클라이언트 가져오기
+            var cmd = _drone.GetMicroservice<ICommandClient>();
+            if (cmd == null) return;
+
+            try
+            {
+                // MAV_CMD_DO_PAUSE_CONTINUE (193) 명령 사용
+                // 첫 번째 파라미터가 0이면 '일시 정지(Hold)', 1이면 '계속(Continue)'을 의미합니다.
+                await cmd.SendCommandInt(
+                    MavCmd.MavCmdDoPauseContinue,
+                    MavFrame.MavFrameGlobalRelativeAltInt,
+                    false,
+                    false,
+                    0f,    // Param 1: 0 = Pause (기체 정지)
+                    0f, 0f, 0f, 0, 0, 0f,
+                    _cts?.Token ?? CancellationToken.None
+                );
+
+                OnLogReceived?.Invoke("[시스템] 기체 정지(Hold) 명령을 전송했습니다.");
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] Hold 명령 전송 실패: {ex.Message}");
+            }
+        }
         #endregion
     }
 }
