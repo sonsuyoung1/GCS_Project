@@ -57,7 +57,6 @@ namespace GCS_Project.ViewModels
 
             _mavlinkService.OnMissionCompleted += () =>
             {
-                _mavlinkService._isMissionRunning = false;
                 Application.Current.Dispatcher.BeginInvoke(() => {
                     ChatLog += "\n모든 목적지에 도착하여 미션을 종료합니다.";
                 });

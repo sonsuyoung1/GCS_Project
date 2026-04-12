@@ -71,7 +71,7 @@ namespace GCS_Project
                 // 3. 비동기 초기화 시작
                 await mapWebView.EnsureCoreWebView2Async(env);
 
-                // 4. 초기화 성공 후 설정 (이 순서가 매우 중요합니다!)
+                // 4. 초기화 성공 후 설정
                 // 배경 투명 설정
                 mapWebView.DefaultBackgroundColor = System.Drawing.Color.Transparent;
                 _mapController = new MapController(mapWebView);
