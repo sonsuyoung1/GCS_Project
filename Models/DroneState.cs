@@ -45,6 +45,7 @@ namespace GCS_Project.Models
         public double Pitch { get => _pitch; set => SetProperty(ref _pitch, value); }
         public double Yaw { get => _yaw; set => SetProperty(ref _yaw, value); }
 
+        // 타겟이 탐지 되었을 때
         public bool IsTargetDetected { get => _isTargetDetected; set => SetProperty(ref _isTargetDetected, value); }
         public double TargetLat { get => _targetLat; set => SetProperty(ref _targetLat, value); }
         public double TargetLng { get => _targetLng; set => SetProperty(ref _targetLng, value); }
