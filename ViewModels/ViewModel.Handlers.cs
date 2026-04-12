@@ -146,12 +146,29 @@ namespace GCS_Project.ViewModels
                 });
             };*/
 
+            // 욜로 딜레이 확인하려고 잠시 주석 04/12
+            /*            _yoloMetaUdpService.OnTargetsReceived += (targets) =>
+                        {
+                            Application.Current.Dispatcher.BeginInvoke(() =>
+                            {
+                                ApplyDetectedTargets(targets);
+                            });
+                        };*/
+            //위에 주석 풀고 아래 삭제해야돼 04/12
             _yoloMetaUdpService.OnTargetsReceived += (targets) =>
             {
-                Application.Current.Dispatcher.BeginInvoke(() =>
+                lock (_pendingTargetsLock)
                 {
-                    ApplyDetectedTargets(targets);
-                });
+                    _pendingTargetsQueue.Enqueue(new PendingTargets
+                    {
+                        ApplyAtUtc = DateTime.UtcNow.AddMilliseconds(_metaDisplayDelayMs),
+                        Targets = targets
+                    });
+
+                    // 큐 폭발 방지
+                    while (_pendingTargetsQueue.Count > 30)
+                        _pendingTargetsQueue.Dequeue();
+                }
             };
 
             try
@@ -352,6 +369,35 @@ namespace GCS_Project.ViewModels
                 }
             }
         }
+
+        //나중에 삭제해야됨, 욜로 딜레이용 04/12
+        public void FlushDelayedTargets()
+        {
+            List<DetectedTarget>? ready = null;
+
+            lock (_pendingTargetsLock)
+            {
+                if (_pendingTargetsQueue.Count == 0)
+                    return;
+
+                var now = DateTime.UtcNow;
+
+                while (_pendingTargetsQueue.Count > 0 &&
+                       _pendingTargetsQueue.Peek().ApplyAtUtc <= now)
+                {
+                    ready = _pendingTargetsQueue.Dequeue().Targets;
+                }
+            }
+
+            if (ready != null)
+            {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    ApplyDetectedTargets(ready);
+                });
+            }
+        }
+
 
         // 수동 조종 엔진 켜기/끄기
         public async Task ToggleManualControl(bool turnOn)

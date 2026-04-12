@@ -60,6 +60,19 @@ namespace GCS_Project.ViewModels
         private CommandStateSnapshot? _lastCommandStateSnapshot;
 
         private System.Windows.Threading.DispatcherTimer? _clockTimer;
+
+        // YOLO 딜레이용 테스트용 필드임 나중에 지우삼 04/12
+        private sealed class PendingTargets
+        {
+            public DateTime ApplyAtUtc { get; set; }
+            public List<DetectedTarget> Targets { get; set; } = new();
+        }
+
+        private readonly Queue<PendingTargets> _pendingTargetsQueue = new();
+        private readonly object _pendingTargetsLock = new();
+
+        // 딜레이 값 (테스트용)
+        private int _metaDisplayDelayMs = 150;
         #endregion
 
 

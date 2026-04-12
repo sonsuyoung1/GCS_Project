@@ -96,7 +96,7 @@ namespace GCS_Project
                 Interval = TimeSpan.FromMilliseconds(16)
             };
 
-            _overlayTimer.Tick += (s, args) =>
+            /*_overlayTimer.Tick += (s, args) =>
             {
                 if (_overlayWindow == null || _viewModel == null)
                     return;
@@ -107,8 +107,24 @@ namespace GCS_Project
                 _overlayDirty = false;
                 UpdateOverlayBounds();
                 RedrawBboxes();
-            };
+            };*/
+            //위에 주석 풀고 아래 삭제해야돼 04/12
+            _overlayTimer.Tick += (s, args) =>
+            {
+                if (_overlayWindow == null || _viewModel == null)
+                    return;
 
+                // 🔥 추가 (핵심)
+                _viewModel.FlushDelayedTargets();
+
+                if (!_overlayDirty)
+                    return;
+
+                _overlayDirty = false;
+                UpdateOverlayBounds();
+                RedrawBboxes();
+            };
+            //여기 위에까지 삭제
             _overlayTimer.Start();
 
             await Dispatcher.InvokeAsync(
