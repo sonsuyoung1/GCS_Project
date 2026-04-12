@@ -259,6 +259,8 @@ namespace GCS_Project.xServices
                 OnLogReceived?.Invoke("[알림] 이미 웨이포인트가 비어있습니다.");
             }
         }
+
+
         #endregion
     }
 }
