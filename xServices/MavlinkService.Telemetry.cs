@@ -232,6 +232,7 @@ namespace GCS_Project.xServices
                 }
                 else
                 {
+                    
                     OnLogReceived?.Invoke($"[명령 경고] {commandName} 실패 사유: {resultText}");
                 }
 
