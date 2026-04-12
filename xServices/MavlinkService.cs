@@ -143,8 +143,8 @@ namespace GCS_Project.xServices
         /// </summary>
         public async Task StartAsync(
             string listenHost = "0.0.0.0",
-            int listenPort = 14600,
-            string droneIp = "192.168.0.25",
+            int listenPort = 14550,
+            string droneIp = "192.168.0.38",
             int dronePort = 14551)
         {
             if (_router != null) return;
