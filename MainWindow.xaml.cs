@@ -114,8 +114,8 @@ namespace GCS_Project
                 if (_overlayWindow == null || _viewModel == null)
                     return;
 
-                // 🔥 추가 (핵심)
                 _viewModel.FlushDelayedTargets();
+                SmoothTargets();
 
                 if (!_overlayDirty)
                     return;
@@ -405,6 +405,10 @@ namespace GCS_Project
                 e.PropertyName == nameof(DetectedTarget.By) ||
                 e.PropertyName == nameof(DetectedTarget.Bw) ||
                 e.PropertyName == nameof(DetectedTarget.Bh) ||
+                e.PropertyName == nameof(DetectedTarget.DisplayBx) ||
+                e.PropertyName == nameof(DetectedTarget.DisplayBy) ||
+                e.PropertyName == nameof(DetectedTarget.DisplayBw) ||
+                e.PropertyName == nameof(DetectedTarget.DisplayBh) ||
                 e.PropertyName == nameof(DetectedTarget.TargetType) ||
                 e.PropertyName == nameof(DetectedTarget.IsBeingTracked))
             {
@@ -631,6 +635,52 @@ namespace GCS_Project
             return (cx, cy);
         }
 
+        //스무딩 작업
+        private void SmoothTargets()
+        {
+            if (_viewModel == null)
+                return;
+
+            const double alpha = 0.25; // 시작값
+
+            bool changed = false;
+
+            foreach (var t in _viewModel.DetectedTargets)
+            {
+                double nextBx = t.DisplayBx + (t.Bx - t.DisplayBx) * alpha;
+                double nextBy = t.DisplayBy + (t.By - t.DisplayBy) * alpha;
+                double nextBw = t.DisplayBw + (t.Bw - t.DisplayBw) * alpha;
+                double nextBh = t.DisplayBh + (t.Bh - t.DisplayBh) * alpha;
+
+                if (Math.Abs(nextBx - t.DisplayBx) > 0.01)
+                {
+                    t.DisplayBx = nextBx;
+                    changed = true;
+                }
+
+                if (Math.Abs(nextBy - t.DisplayBy) > 0.01)
+                {
+                    t.DisplayBy = nextBy;
+                    changed = true;
+                }
+
+                if (Math.Abs(nextBw - t.DisplayBw) > 0.01)
+                {
+                    t.DisplayBw = nextBw;
+                    changed = true;
+                }
+
+                if (Math.Abs(nextBh - t.DisplayBh) > 0.01)
+                {
+                    t.DisplayBh = nextBh;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+                _overlayDirty = true;
+        }
+
         private void RedrawBboxes()
         {
             if (_viewModel == null || _overlayWindow == null)
@@ -657,10 +707,10 @@ namespace GCS_Project
 
             foreach (var t in _viewModel.DetectedTargets)
             {
-                double leftF = t.Bx - (t.Bw / 2.0);
-                double topF = t.By - (t.Bh / 2.0);
-                double rightF = t.Bx + (t.Bw / 2.0);
-                double bottomF = t.By + (t.Bh / 2.0);
+                double leftF = t.DisplayBx - (t.DisplayBw / 2.0);
+                double topF = t.DisplayBy - (t.DisplayBh / 2.0);
+                double rightF = t.DisplayBx + (t.DisplayBw / 2.0);
+                double bottomF = t.DisplayBy + (t.DisplayBh / 2.0);
 
                 leftF = Math.Max(0, leftF);
                 topF = Math.Max(0, topF);

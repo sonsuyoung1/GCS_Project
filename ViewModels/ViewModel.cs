@@ -72,7 +72,7 @@ namespace GCS_Project.ViewModels
         private readonly object _pendingTargetsLock = new();
 
         // 딜레이 값 (테스트용)
-        private int _metaDisplayDelayMs = 150;
+        private int _metaDisplayDelayMs = 158;
         #endregion
 
 

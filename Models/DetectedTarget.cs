@@ -14,6 +14,7 @@ namespace GCS_Project.Models
         private double _lng;
         private bool _isBeingTracked;
         private double _bx, _by, _bw, _bh;
+        private double _displayBx, _displayBy, _displayBw, _displayBh;
 
         private int _id;
         public int ID
@@ -55,6 +56,31 @@ namespace GCS_Project.Models
         public double By { get => _by; set { _by = value; OnPropertyChanged(); } }
         public double Bw { get => _bw; set { _bw = value; OnPropertyChanged(); } }
         public double Bh { get => _bh; set { _bh = value; OnPropertyChanged(); } }
+
+        //EMA 스뮝 작업
+        public double DisplayBx
+        {
+            get => _displayBx;
+            set { _displayBx = value; OnPropertyChanged(); }
+        }
+
+        public double DisplayBy
+        {
+            get => _displayBy;
+            set { _displayBy = value; OnPropertyChanged(); }
+        }
+
+        public double DisplayBw
+        {
+            get => _displayBw;
+            set { _displayBw = value; OnPropertyChanged(); }
+        }
+
+        public double DisplayBh
+        {
+            get => _displayBh;
+            set { _displayBh = value; OnPropertyChanged(); }
+        }
 
         // UI 갱신을 위한 인터페이스 구현
         public event PropertyChangedEventHandler? PropertyChanged;

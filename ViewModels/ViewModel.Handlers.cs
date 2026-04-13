@@ -329,6 +329,11 @@ namespace GCS_Project.ViewModels
                 }
                 else
                 {
+                    incoming.DisplayBx = incoming.Bx;
+                    incoming.DisplayBy = incoming.By;
+                    incoming.DisplayBw = incoming.Bw;
+                    incoming.DisplayBh = incoming.Bh;
+
                     _detectedTargets.Add(incoming);
                 }
             }
