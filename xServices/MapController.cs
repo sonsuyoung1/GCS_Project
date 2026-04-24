@@ -1,93 +1,140 @@
-﻿using System;
+﻿using Microsoft.Web.WebView2.Wpf;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.Web.WebView2.Wpf;
 
 namespace GCS_Project.Services
 {
     public class MapController
     {
         private readonly WebView2 _webView;
+        private static readonly CultureInfo InvariantCulture = CultureInfo.InvariantCulture;
 
-        // 생성자: MainWindow에 있는 WebView2 객체를 전달받습니다.
         public MapController(WebView2 webView)
         {
             _webView = webView;
         }
 
-        // 이륙 지점 업데이트
+        #region [1. 드론 및 이륙 지점 표시]
+
+        // 지도에 이륙 지점 마커를 표시한다.
         public async Task AddTakeoffMarker(double lat, double lng)
         {
-            if (_webView != null && _webView.CoreWebView2 != null)
-            {
-                string script = $"addTakeoffMarker({lat.ToString(System.Globalization.CultureInfo.InvariantCulture)}, {lng.ToString(System.Globalization.CultureInfo.InvariantCulture)})";
-                await _webView.ExecuteScriptAsync(script);
-            }
+            string script =
+                $"addTakeoffMarker({ToJsNumber(lat)}, {ToJsNumber(lng)})";
+
+            await ExecuteScriptAsync(script);
         }
 
-        // 드론의 위도와 경도를 받아 지도의 마커 위치를 갱신.
-        // 드론 위치 업데이트
-        // 03/02 heading 수정
+        // 드론의 현재 위치와 방향을 지도에 반영한다.
         public async Task UpdateDroneLocation(double lat, double lng, double heading)
         {
-            if (_webView?.CoreWebView2 != null)
-            {
-                var ci = System.Globalization.CultureInfo.InvariantCulture;
+            string script =
+                $"updateLocation({ToJsNumber(lat)}, {ToJsNumber(lng)}, {ToJsNumber(heading)})";
 
-                string script =
-                    $"updateLocation({lat.ToString(ci)}, {lng.ToString(ci)}, {heading.ToString(ci)})";
-
-                await _webView.ExecuteScriptAsync(script);
-            }
+            await ExecuteScriptAsync(script);
         }
 
-        // 지도에서 마지막 찍은 마커와 점선 하나 취소
+        #endregion
+
+
+        #region [2. 웨이포인트 및 지도 초기화]
+
+        // 지도에서 마지막 웨이포인트 마커와 경로를 삭제한다.
         public async Task UndoLastWaypointOnMap()
         {
-            if (_webView?.CoreWebView2 != null)
-                await _webView.ExecuteScriptAsync("undoLastWaypoint()");
+            await ExecuteScriptAsync("undoLastWaypoint()");
         }
 
-        // 지도상의 모든 미션 경로 및 마커 초기화
+        // 지도에 표시된 모든 웨이포인트와 미션 경로를 삭제한다.
         public async Task ClearAllWaypointsOnMap()
         {
-            if (_webView?.CoreWebView2 != null)
-                await _webView.ExecuteScriptAsync("clearAllWaypoints()");
+            await ExecuteScriptAsync("clearAllWaypoints()");
         }
 
+        // 지도에 표시된 모든 마커와 경로 요소를 삭제한다.
         public async Task ClearAllOnMap()
         {
-            if (_webView?.CoreWebView2 != null) 
-                await _webView.ExecuteScriptAsync("clearAllMapElements()");
+            await ExecuteScriptAsync("clearAllMapElements()");
         }
 
+        #endregion
 
-        public async Task UpdateTargetOnMap(int id, double lat, double lng, string type, bool isTracked)
+
+        #region [3. 타겟 표시]
+
+        // 탐지된 타겟 마커를 지도에 표시하거나 갱신한다.
+        public async Task UpdateTargetOnMap(
+            int id,
+            double lat,
+            double lng,
+            string type,
+            bool isTracked)
         {
-            if (_webView?.CoreWebView2 != null)
-            {
-                // index.html에 새로 만든 'updateTargetMarker' 함수를 호출합니다.
-                // ID, 위도, 경도, 타입, 추적여부를 모두 전달합니다.
-                string script = $"updateTargetMarker({id}, {lat}, {lng}, '{type}', {isTracked.ToString().ToLower()})";
-                await _webView.ExecuteScriptAsync(script);
-            }
+            string escapedType = EscapeJsString(type);
+            string trackedValue = isTracked.ToString().ToLowerInvariant();
+
+            string script =
+                $"updateTargetMarker({id}, {ToJsNumber(lat)}, {ToJsNumber(lng)}, '{escapedType}', {trackedValue})";
+
+            await ExecuteScriptAsync(script);
         }
 
-        // 지도를 특정 좌표로 즉시 이동시킵니다. (pan이 좌우나 상하로 회전하면서 촬영하는 것을 뜻, 여기서는 지도를 옆으로 미는 동작)
+        #endregion
+
+
+        #region [4. 지도 이동 및 비행 궤적]
+
+        // 지도를 특정 좌표로 이동시킨다.
         public async Task PanTo(double lat, double lng)
         {
-            if (_webView != null && _webView.CoreWebView2 != null)
-                await _webView.ExecuteScriptAsync($"map.panTo(new L.LatLng({lat}, {lng}))");
+            string script =
+                $"map.panTo(new L.LatLng({ToJsNumber(lat)}, {ToJsNumber(lng)}))";
+
+            await ExecuteScriptAsync(script);
         }
 
-        // MapController.cs에 추가
+        // 비행 기록 좌표 목록을 지도에 선으로 표시한다.
         public async Task DrawHistoryPath(List<Tuple<double, double>> path)
         {
-            // C#의 좌표 리스트를 JS가 이해할 수 있는 [[lat, lng], ...] 형태의 JSON으로 변환
-            var jsonPath = System.Text.Json.JsonSerializer.Serialize(
-                path.Select(p => new double[] { p.Item1, p.Item2 })
+            var jsonPath = JsonSerializer.Serialize(
+                path.Select(p => new[] { p.Item1, p.Item2 })
             );
 
-            await _webView.ExecuteScriptAsync($"drawFlightPath({jsonPath})");
+            await ExecuteScriptAsync($"drawFlightPath({jsonPath})");
         }
+
+        #endregion
+
+
+        #region [5. 공통 유틸리티]
+
+        // WebView2가 준비되어 있으면 JavaScript 코드를 실행한다.
+        private async Task ExecuteScriptAsync(string script)
+        {
+            if (_webView?.CoreWebView2 == null)
+                return;
+
+            await _webView.ExecuteScriptAsync(script);
+        }
+
+        // double 값을 JavaScript에서 안전하게 읽을 수 있는 문자열로 변환한다.
+        private static string ToJsNumber(double value)
+        {
+            return value.ToString(InvariantCulture);
+        }
+
+        // JavaScript 문자열 안에서 문제가 될 수 있는 문자를 이스케이프한다.
+        private static string EscapeJsString(string value)
+        {
+            return value
+                .Replace("\\", "\\\\")
+                .Replace("'", "\\'");
+        }
+
+        #endregion
     }
 }

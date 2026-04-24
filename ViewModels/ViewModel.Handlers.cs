@@ -1,14 +1,11 @@
 ﻿using Asv.Mavlink.Minimal;
+using GCS_Project.Data;
 using GCS_Project.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
-using System.Threading.Tasks.Dataflow;
 using System.Windows;
-using GCS_Project.Data;
 
 namespace GCS_Project.ViewModels
 {
@@ -16,8 +13,9 @@ namespace GCS_Project.ViewModels
     {
         private DateTime _lastDbSaveTime = DateTime.MinValue;
 
-        #region [이벤트 핸들러 (Event Handlers)]
-        //현재 버튼 상태 캡처 메서드 추가 03/22
+        #region [1. 버튼 상태 갱신]
+
+        // 버튼 활성화에 영향을 주는 현재 상태를 스냅샷으로 만든다.
         private CommandStateSnapshot CaptureCommandState()
         {
             return new CommandStateSnapshot(
@@ -25,11 +23,12 @@ namespace GCS_Project.ViewModels
                 Drone.IsConnected,
                 Drone.IsArmed,
                 _currentWaypointCount,
-                SelectedTarget != null, 
+                SelectedTarget != null,
                 IsStriking
             );
         }
-        //필요할 때만 버튼 갱신하는 메서드 추가
+
+        // 버튼 상태에 영향을 주는 값이 바뀐 경우에만 커맨드 상태를 갱신한다.
         private void RefreshCommandStatesIfNeeded()
         {
             var current = CaptureCommandState();
@@ -41,7 +40,12 @@ namespace GCS_Project.ViewModels
             }
         }
 
-        //ChatLog += 직접 붙이는 거 정리 -> 딜레이 막기 위함 03/22
+        #endregion
+
+
+        #region [2. 로그 처리]
+
+        // 로그를 버퍼에 누적하고 길이가 길어지면 일부만 유지한다.
         private void AppendLog(string message)
         {
             if (string.IsNullOrWhiteSpace(message)) return;
@@ -61,12 +65,42 @@ namespace GCS_Project.ViewModels
             ChatLog = _chatLogBuffer.ToString();
         }
 
-        // 초기화 서비스 메서드
+        #endregion
+
+
+        #region [3. 서비스 초기화 및 이벤트 연결]
+
+        // MAVLink와 YOLO UDP 서비스를 시작하고 이벤트를 ViewModel에 연결한다.
         private async void InitializeService()
         {
             if (_mavStarting) return;
+
             _mavStarting = true;
 
+            SubscribeMavlinkEvents();
+            SubscribeYoloEvents();
+
+            try
+            {
+                await _mavlinkService.StartAsync("0.0.0.0", 14550, "192.168.0.25", 14551);
+                AppendLog("[시스템] MAVLink 연결 성공");
+
+                await _yoloMetaUdpService.StartAsync();
+                AppendLog("[시스템] YOLO UDP 메타 수신 시작");
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[오류] 서비스 시작 실패: {ex.Message}");
+            }
+            finally
+            {
+                _mavStarting = false;
+            }
+        }
+
+        // MAVLink 서비스에서 발생하는 상태/모드/미션 이벤트를 연결한다.
+        private void SubscribeMavlinkEvents()
+        {
             _mavlinkService.OnDataUpdated += (state) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() =>
@@ -96,59 +130,26 @@ namespace GCS_Project.ViewModels
             {
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
-                    switch (newMode)
-                    {
-                        case "TAKEOFF":
-                            FlightMode = MODE_TAKEOFF;
-                            break;
-
-                        case "HOLD":
-                        case "POSCTL":
-                        case "ALTCTL":
-                            FlightMode = MODE_HOLD;
-                            break;
-
-                        case "MISSION":
-                            FlightMode = MODE_MISSION;
-                            break;
-
-                        case "MANUAL":
-                            FlightMode = MODE_MANUAL;
-                            break;
-
-                        case "RTL":
-                            FlightMode = MODE_HOLD;
-                            break;
-
-                        case "LAND":
-                            FlightMode = MODE_TAKEOFF;
-                            break;
-
-                        default:
-                            break;
-                    }
-
+                    ApplyFlightModeFromPx4(newMode);
                     RefreshCommandStatesIfNeeded();
                 });
             };
 
-            // 지연 해결할때까지 주석처리
-            /*_mavlinkService.OnLogReceived += (message) =>
+            // 로그 출력이 UI 지연을 만들 경우 아래 이벤트 구독은 비활성화한다.
+            /*
+            _mavlinkService.OnLogReceived += (message) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
                     AppendLog(message);
                 });
             };
+            */
+        }
 
-            _yoloMetaUdpService.OnLogReceived += (message) =>
-            {
-                Application.Current.Dispatcher.BeginInvoke(() =>
-                {
-                    AppendLog(message);
-                });
-            };*/
-
+        // YOLO UDP 서비스에서 수신한 타겟 목록 이벤트를 연결한다.
+        private void SubscribeYoloEvents()
+        {
             _yoloMetaUdpService.OnTargetsReceived += (targets) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() =>
@@ -157,27 +158,72 @@ namespace GCS_Project.ViewModels
                 });
             };
 
-            try
+            // 로그 출력이 UI 지연을 만들 경우 아래 이벤트 구독은 비활성화한다.
+            /*
+            _yoloMetaUdpService.OnLogReceived += (message) =>
             {
-                await _mavlinkService.StartAsync("0.0.0.0", 14600, "192.168.0.25", 14551);
-                AppendLog("[시스템] MAVLink 연결 성공");
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    AppendLog(message);
+                });
+            };
+            */
+        }
 
-                await _yoloMetaUdpService.StartAsync();
-                AppendLog("[시스템] YOLO UDP 메타 수신 시작");
-            }
-            catch (Exception ex)
+        // PX4에서 받은 실제 비행 모드를 ViewModel의 FlightMode로 변환한다.
+        private void ApplyFlightModeFromPx4(string newMode)
+        {
+            switch (newMode)
             {
-                AppendLog($"[오류] 서비스 시작 실패: {ex.Message}");
-            }
-            finally
-            {
-                _mavStarting = false;
+                case "TAKEOFF":
+                    FlightMode = MODE_TAKEOFF;
+                    break;
+
+                case "HOLD":
+                case "POSCTL":
+                case "ALTCTL":
+                case "RTL":
+                    FlightMode = MODE_HOLD;
+                    break;
+
+                case "MISSION":
+                    FlightMode = MODE_MISSION;
+                    break;
+
+                case "MANUAL":
+                    FlightMode = MODE_MANUAL;
+                    break;
+
+                case "LAND":
+                    FlightMode = MODE_TAKEOFF;
+                    break;
+
+                default:
+                    break;
             }
         }
 
+        #endregion
+
+
+        #region [4. 드론 상태 반영]
+
+        // PX4에서 수신한 드론 상태를 UI용 Drone 객체와 화면 이벤트에 반영한다.
         private void ApplyAllState(DroneState state)
         {
-            // HUD
+            ApplyHudState(state);
+            ApplyStatusState(state);
+            UpdateBatteryWarningState(state);
+            UpdateFlightState(state);
+            UpdateMapState(state);
+            SaveFlightLogIfNeeded(state);
+
+            RefreshCommandStatesIfNeeded();
+        }
+
+        // HUD에 표시할 자세, 고도, 속도 정보를 갱신한다.
+        private void ApplyHudState(DroneState state)
+        {
             _uiDrone.Altitude = state.Altitude;
             _uiDrone.Speed = state.Speed;
             _uiDrone.Roll = state.Roll;
@@ -189,8 +235,11 @@ namespace GCS_Project.ViewModels
 
             if (PitchOffset != newPitchOffset) PitchOffset = newPitchOffset;
             if (HeadingOffset != newHeadingOffset) HeadingOffset = newHeadingOffset;
+        }
 
-            // STATUS
+        // 연결, 시동, 배터리, 위치 같은 드론 상태 정보를 갱신한다.
+        private void ApplyStatusState(DroneState state)
+        {
             _uiDrone.Latitude = state.Latitude;
             _uiDrone.Longitude = state.Longitude;
             _uiDrone.IsConnected = state.IsConnected;
@@ -203,9 +252,13 @@ namespace GCS_Project.ViewModels
             _uiDrone.TargetLng = state.TargetLng;
             _uiDrone.TargetAltitude = state.TargetAltitude;
             _uiDrone.TargetSpeed = state.TargetSpeed;
+        }
 
-            // 배터리 경고 상태만 내부 플래그 관리
+        // 배터리 경고 표시 여부를 내부 플래그로 관리한다.
+        private void UpdateBatteryWarningState(DroneState state)
+        {
             bool batteryWarning = state.BatteryPercent > 0 && state.BatteryPercent <= 20;
+
             if (batteryWarning && !_batteryWarningShown)
             {
                 _batteryWarningShown = true;
@@ -214,35 +267,56 @@ namespace GCS_Project.ViewModels
             {
                 _batteryWarningShown = false;
             }
+        }
 
-            // 비행 상태 추적
+        // Armed/Disarmed 변화와 착륙 후 IDLE 복귀 상태를 처리한다.
+        private void UpdateFlightState(DroneState state)
+        {
             if (state.Altitude > 1.0)
             {
                 _isFlyingHigh = true;
             }
 
-            if (!state.IsArmed)
+            bool isCurrentlyArmed = state.IsArmed;
+
+            if (_wasArmed != isCurrentlyArmed)
             {
-                _isFlyingHigh = false;
-
-                if (IsStriking)
+                if (!isCurrentlyArmed)
                 {
-                    IsStriking = false;
-                    AppendLog("[시스템] 기체 시동이 꺼져 타격 모드를 자동 해제합니다.");
+                    HandleDisarmedState();
                 }
 
-                if (FlightMode != MODE_IDLE)
-                {
-                    FlightMode = MODE_IDLE;
-                }
+                _wasArmed = isCurrentlyArmed;
             }
-            else if (_isFlyingHigh && FlightMode == MODE_TAKEOFF && state.Altitude <= 0.5)
+
+            if (_isFlyingHigh && FlightMode == MODE_TAKEOFF && state.Altitude <= 0.5)
             {
                 FlightMode = MODE_IDLE;
                 _isFlyingHigh = false;
             }
+        }
 
-            // MAP
+        // 기체가 Disarm 상태로 바뀌었을 때 타격 상태와 비행 모드를 정리한다.
+        private void HandleDisarmedState()
+        {
+            _isFlyingHigh = false;
+
+            if (IsStriking)
+            {
+                IsStriking = false;
+                AppendLog("[시스템] 기체 시동이 꺼져 타격 모드를 자동 해제합니다.");
+            }
+
+            if (FlightMode != MODE_IDLE)
+            {
+                FlightMode = MODE_IDLE;
+                AppendLog("[시스템] 시동 꺼짐 확인. 대기(IDLE) 상태로 전환합니다.");
+            }
+        }
+
+        // 드론 위치와 이륙 지점을 지도에 반영한다.
+        private void UpdateMapState(DroneState state)
+        {
             if (!(state.Latitude == 0 && state.Longitude == 0))
             {
                 PositionUpdated?.Invoke(state.Latitude, state.Longitude, state.Yaw);
@@ -253,57 +327,75 @@ namespace GCS_Project.ViewModels
                 TakeoffPointSet?.Invoke(state.TakeoffLat.Value, state.TakeoffLng.Value);
                 _isTakeoffMarkerDrawn = true;
             }
-
-            if ((DateTime.UtcNow - _lastDbSaveTime).TotalMilliseconds > 1000)
-            {
-                _lastDbSaveTime = DateTime.UtcNow;
-
-                var lat = state.Latitude;
-                var lng = state.Longitude;
-                var alt = state.Altitude;
-                var speed = state.Speed;
-                var battery = state.BatteryPercent;
-                var flightMode = this.FlightMode;
-
-                if (!(lat == 0 && lng == 0))
-                {
-                    Task.Run(() =>
-                    {
-                        try
-                        {
-                            using (var db = new GCS_Project.Data.AppDbContext())
-                            {
-                                var newLog = new FlightLog
-                                {
-                                    Timestamp = DateTime.Now,
-                                    Latitude = lat,
-                                    Longitude = lng,
-                                    Altitude = alt,
-                                    Speed = speed,
-                                    BatteryPercent = battery,
-                                    FlightMode = flightMode
-                                };
-
-                                db.FlightLogs.Add(newLog);
-                                db.SaveChanges();
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"DB 저장 실패: {ex.Message}");
-                        }
-                    });
-                }
-            }
-
-            RefreshCommandStatesIfNeeded();
         }
 
+        // 1초 간격으로 드론 비행 상태를 DB에 저장한다.
+        private void SaveFlightLogIfNeeded(DroneState state)
+        {
+            if ((DateTime.UtcNow - _lastDbSaveTime).TotalMilliseconds <= 1000)
+                return;
+
+            _lastDbSaveTime = DateTime.UtcNow;
+
+            double lat = state.Latitude;
+            double lng = state.Longitude;
+
+            if (lat == 0 && lng == 0)
+                return;
+
+            double alt = state.Altitude;
+            double speed = state.Speed;
+            int battery = state.BatteryPercent;
+            string flightMode = FlightMode;
+            int flightId = _currentFlightId;
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    using (var db = new AppDbContext())
+                    {
+                        var newLog = new FlightLog
+                        {
+                            FlightId = flightId,
+                            Timestamp = DateTime.Now,
+                            Latitude = lat,
+                            Longitude = lng,
+                            Altitude = alt,
+                            Speed = speed,
+                            BatteryPercent = battery,
+                            FlightMode = flightMode
+                        };
+
+                        db.FlightLogs.Add(newLog);
+                        db.SaveChanges();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"DB 저장 실패: {ex.Message}");
+                }
+            });
+        }
+
+        #endregion
+
+
+        #region [5. 탐지 타겟 반영]
+
+        // YOLO에서 받은 타겟 목록을 기존 타겟 목록에 병합하고 선택 상태를 유지한다.
         private void ApplyDetectedTargets(List<DetectedTarget> targets)
         {
             var incomingById = targets.ToDictionary(t => t.ID);
 
-            // 1) 기존 타겟 업데이트 + 새 타겟 추가
+            UpdateOrAddTargets(targets);
+            RemoveMissingTargets(incomingById);
+            ReconnectSelectedTarget();
+        }
+
+        // 기존 타겟은 갱신하고 새 타겟은 목록에 추가한다.
+        private void UpdateOrAddTargets(List<DetectedTarget> targets)
+        {
             foreach (var incoming in targets)
             {
                 var existing = _detectedTargets.FirstOrDefault(t => t.ID == incoming.ID);
@@ -324,52 +416,74 @@ namespace GCS_Project.ViewModels
                     _detectedTargets.Add(incoming);
                 }
             }
+        }
 
-            // 2) 이번 프레임에 없는 타겟 제거
+        // 이번 프레임에 없는 타겟을 목록에서 제거한다.
+        private void RemoveMissingTargets(Dictionary<int, DetectedTarget> incomingById)
+        {
             for (int i = _detectedTargets.Count - 1; i >= 0; i--)
             {
                 var existing = _detectedTargets[i];
 
-                if (!incomingById.ContainsKey(existing.ID))
-                {
-                    if (SelectedTarget?.ID == existing.ID)
-                    {
-                        SelectedTarget = null;
+                if (incomingById.ContainsKey(existing.ID))
+                    continue;
 
-                        if (IsStriking)
-                        {
-                            AppendLog("[경고] 돌진 중 타겟을 시야에서 상실했습니다! (마지막 좌표로 계속 비행합니다)");
-                            // 원한다면 여기에 ExecuteStopStrike(); 를 호출해 급브레이크를 밟게 할 수도 있습니다.
-                        }
-                    }
-
-                    _detectedTargets.RemoveAt(i);
-                }
-            }
-
-            // 3) 선택된 타겟 다시 연결
-            if (SelectedTarget != null)
-            {
-                var matched = _detectedTargets.FirstOrDefault(t => t.ID == SelectedTarget.ID);
-
-                if (matched != null)
-                {
-                    if (!ReferenceEquals(SelectedTarget, matched))
-                    {
-                        SelectedTarget = matched;
-                    }
-
-                    matched.IsBeingTracked = true;
-                }
-                else
+                if (SelectedTarget?.ID == existing.ID)
                 {
                     SelectedTarget = null;
+
+                    if (IsStriking)
+                    {
+                        AppendLog("[경고] 돌진 중 타겟을 시야에서 상실했습니다. 마지막 좌표로 계속 비행합니다.");
+                    }
                 }
+
+                _detectedTargets.RemoveAt(i);
             }
         }
 
-        // 수동 조종 엔진 켜기/끄기
+        // 선택된 타겟이 갱신된 목록 안에 있으면 새 객체와 다시 연결한다.
+        private void ReconnectSelectedTarget()
+        {
+            if (SelectedTarget == null)
+                return;
+
+            var matched = _detectedTargets.FirstOrDefault(t => t.ID == SelectedTarget.ID);
+
+            if (matched == null)
+            {
+                SelectedTarget = null;
+                return;
+            }
+
+            if (!ReferenceEquals(SelectedTarget, matched))
+            {
+                SelectedTarget = matched;
+            }
+
+            matched.IsBeingTracked = true;
+        }
+
+        #endregion
+
+
+        #region [6. 수동 조종]
+
+        // 수동 조종 모드를 켜거나 끈다.
         public async Task ToggleManualControl(bool turnOn)
+        {
+            if (turnOn)
+            {
+                await EnterManualControl();
+            }
+            else
+            {
+                await ExitManualControl();
+            }
+        }
+
+        // 수동 조종 모드로 진입하고 가상 조이스틱 송신을 시작한다.
+        private async Task EnterManualControl()
         {
             try
             {
@@ -379,8 +493,6 @@ namespace GCS_Project.ViewModels
                 );
 
                 _mavlinkService.StartManualControl();
-
-                // 시작하자마자 중립 입력 넣기
                 _mavlinkService.SetJoystick(0, 0, 500, 0);
 
                 FlightMode = MODE_MANUAL;
@@ -388,26 +500,35 @@ namespace GCS_Project.ViewModels
             }
             catch (Exception ex)
             {
-                // 1. 먼저 입력을 중립으로 돌림
-                _mavlinkService.SetJoystick(0, 0, 500, 0);
-
-                // 2. 중립 입력이 실제로 몇 번 나가게 잠깐 대기
-                await Task.Delay(200);
-
-                // 3. 그 다음 송신 중지
-                _mavlinkService.StopManualControl();
-
-                // 4. 상태 표시
-                FlightMode = MODE_HOLD;
-                AppendLog("[시스템] 수동 조종 모드 종료 - 제자리 유지");
+                AppendLog($"[오류] 수동 조종 모드 진입 실패: {ex.Message}");
             }
         }
 
-        // 키보드 눌림/뗌에 따라 조이스틱 값 전달
+        // 수동 조종 모드를 종료하고 기체를 제자리 유지 상태로 전환한다.
+        private async Task ExitManualControl()
+        {
+            try
+            {
+                _mavlinkService.SetJoystick(0, 0, 500, 0);
+                await Task.Delay(200);
+
+                _mavlinkService.StopManualControl();
+
+                FlightMode = MODE_HOLD;
+                AppendLog("[시스템] 수동 조종 모드 종료 - 제자리 유지");
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[오류] 수동 조종 모드 종료 실패: {ex.Message}");
+            }
+        }
+
+        // 키보드 입력값을 가상 조이스틱 값으로 MAVLink 서비스에 전달한다.
         public void UpdateJoystick(short pitch, short roll, short thrust, short yaw)
         {
             _mavlinkService.SetJoystick(pitch, roll, thrust, yaw);
         }
+
         #endregion
     }
 }
