@@ -19,7 +19,6 @@ namespace GCS_Project.Services
         }
 
         #region [1. 드론 및 이륙 지점 표시]
-
         // 지도에 이륙 지점 마커를 표시한다.
         public async Task AddTakeoffMarker(double lat, double lng)
         {
@@ -37,12 +36,10 @@ namespace GCS_Project.Services
 
             await ExecuteScriptAsync(script);
         }
-
         #endregion
 
 
         #region [2. 웨이포인트 및 지도 초기화]
-
         // 지도에서 마지막 웨이포인트 마커와 경로를 삭제한다.
         public async Task UndoLastWaypointOnMap()
         {
@@ -60,34 +57,43 @@ namespace GCS_Project.Services
         {
             await ExecuteScriptAsync("clearAllMapElements()");
         }
-
         #endregion
 
 
         #region [3. 타겟 표시]
-
         // 탐지된 타겟 마커를 지도에 표시하거나 갱신한다.
         public async Task UpdateTargetOnMap(
             int id,
             double lat,
             double lng,
             string type,
-            bool isTracked)
+            bool isSelected)
         {
             string escapedType = EscapeJsString(type);
-            string trackedValue = isTracked.ToString().ToLowerInvariant();
+            string selectedValue = isSelected.ToString().ToLowerInvariant();
 
             string script =
-                $"updateTargetMarker({id}, {ToJsNumber(lat)}, {ToJsNumber(lng)}, '{escapedType}', {trackedValue})";
+                $"updateTargetMarker({id}, {ToJsNumber(lat)}, {ToJsNumber(lng)}, '{escapedType}', {selectedValue})";
 
             await ExecuteScriptAsync(script);
         }
 
+        // 선택된 타겟 ID를 지도에 전달해 마커 색을 변경한다.
+        public async Task SelectTargetMarkerOnMap(int? selectedId)
+        {
+            string idValue = selectedId.HasValue ? selectedId.Value.ToString() : "null";
+            await ExecuteScriptAsync($"selectTargetMarker({idValue})");
+        }
+
+        // 사라진 타겟 마커를 지도에서 삭제한다.
+        public async Task RemoveTargetMarkerOnMap(int id)
+        {
+            await ExecuteScriptAsync($"removeTargetMarker({id})");
+        }
         #endregion
 
 
         #region [4. 지도 이동 및 비행 궤적]
-
         // 지도를 특정 좌표로 이동시킨다.
         public async Task PanTo(double lat, double lng)
         {
@@ -106,12 +112,10 @@ namespace GCS_Project.Services
 
             await ExecuteScriptAsync($"drawFlightPath({jsonPath})");
         }
-
         #endregion
 
 
         #region [5. 공통 유틸리티]
-
         // WebView2가 준비되어 있으면 JavaScript 코드를 실행한다.
         private async Task ExecuteScriptAsync(string script)
         {
@@ -134,7 +138,6 @@ namespace GCS_Project.Services
                 .Replace("\\", "\\\\")
                 .Replace("'", "\\'");
         }
-
         #endregion
     }
 }

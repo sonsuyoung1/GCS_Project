@@ -81,6 +81,9 @@ namespace GCS_Project.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("FlightId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsStriked")
                         .HasColumnType("INTEGER");
 
@@ -89,6 +92,9 @@ namespace GCS_Project.Migrations
 
                     b.Property<double>("Longitude")
                         .HasColumnType("REAL");
+
+                    b.Property<int>("TargetId")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("TargetType")
                         .IsRequired()

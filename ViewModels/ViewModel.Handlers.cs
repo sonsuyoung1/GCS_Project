@@ -82,7 +82,7 @@ namespace GCS_Project.ViewModels
 
             try
             {
-                await _mavlinkService.StartAsync("0.0.0.0", 14550, "192.168.0.25", 14551);
+                await _mavlinkService.StartAsync("0.0.0.0", 14550, "192.168.0.61", 14551);
                 AppendLog("[시스템] MAVLink 연결 성공");
 
                 await _yoloMetaUdpService.StartAsync();
@@ -207,7 +207,6 @@ namespace GCS_Project.ViewModels
 
 
         #region [4. 드론 상태 반영]
-
         // PX4에서 수신한 드론 상태를 UI용 Drone 객체와 화면 이벤트에 반영한다.
         private void ApplyAllState(DroneState state)
         {
@@ -377,12 +376,10 @@ namespace GCS_Project.ViewModels
                 }
             });
         }
-
         #endregion
 
 
         #region [5. 탐지 타겟 반영]
-
         // YOLO에서 받은 타겟 목록을 기존 타겟 목록에 병합하고 선택 상태를 유지한다.
         private void ApplyDetectedTargets(List<DetectedTarget> targets)
         {
@@ -391,6 +388,73 @@ namespace GCS_Project.ViewModels
             UpdateOrAddTargets(targets);
             RemoveMissingTargets(incomingById);
             ReconnectSelectedTarget();
+
+            UpdateTargetMarkersOnMap(targets);
+            SaveTargetLogsIfNeeded(targets);
+        }
+
+        // 탐지된 타겟 정보를 DB에 저장한다.
+        private void SaveTargetLogAsync(DetectedTarget target, bool isStriked = false)
+        {
+            int flightId = _currentFlightId;
+            int targetId = target.ID;
+            string targetType = target.TargetType;
+            double lat = target.Lat;
+            double lng = target.Lng;
+            bool isTracked = target.IsBeingTracked;
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    using var db = new AppDbContext();
+
+                    db.TargetLogs.Add(new TargetLog
+                    {
+                        FlightId = flightId,
+                        TargetId = targetId,
+                        Timestamp = DateTime.Now,
+                        TargetType = targetType,
+                        Latitude = lat,
+                        Longitude = lng,
+                        IsStriked = isStriked
+                    });
+
+                    db.SaveChanges();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"TargetLog 저장 실패: {ex.Message}");
+                }
+            });
+        }
+
+        // 타겟 로그가 너무 자주 저장되지 않도록 저장 간격을 제한한다.
+        private bool CanSaveTargetLog()
+        {
+            if ((DateTime.UtcNow - _lastTargetLogSaveTime).TotalSeconds < 5)
+                return false;
+
+            _lastTargetLogSaveTime = DateTime.UtcNow;
+            return true;
+        }
+
+        // 일정 시간마다 현재 탐지된 타겟 목록을 DB에 저장한다.
+        private void SaveTargetLogsIfNeeded(List<DetectedTarget> targets)
+        {
+            if (targets == null || targets.Count == 0)
+                return;
+
+            if (!CanSaveTargetLog())
+                return;
+
+            foreach (var target in targets)
+            {
+                if (target.Lat == 0 && target.Lng == 0)
+                    continue;
+
+                SaveTargetLogAsync(target);
+            }
         }
 
         // 기존 타겟은 갱신하고 새 타겟은 목록에 추가한다.
@@ -428,6 +492,8 @@ namespace GCS_Project.ViewModels
                 if (incomingById.ContainsKey(existing.ID))
                     continue;
 
+                TargetMarkerRemoved?.Invoke(existing.ID);
+
                 if (SelectedTarget?.ID == existing.ID)
                 {
                     SelectedTarget = null;
@@ -438,6 +504,7 @@ namespace GCS_Project.ViewModels
                     }
                 }
 
+                
                 _detectedTargets.RemoveAt(i);
             }
         }
@@ -464,6 +531,25 @@ namespace GCS_Project.ViewModels
             matched.IsBeingTracked = true;
         }
 
+        // 탐지된 타겟 정보를 지도 마커로 표시하도록 이벤트를 발생시킨다.
+        private void UpdateTargetMarkersOnMap(List<DetectedTarget> targets)
+        {
+            foreach (var target in targets)
+            {
+                if (target.Lat == 0 && target.Lng == 0)
+                    continue;
+
+                bool isSelected = SelectedTarget?.ID == target.ID;
+
+                TargetMarkerUpdated?.Invoke(
+                    target.ID,
+                    target.Lat,
+                    target.Lng,
+                    target.TargetType,
+                    isSelected
+                );
+            }
+        }
         #endregion
 
 

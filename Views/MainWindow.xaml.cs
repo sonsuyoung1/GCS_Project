@@ -89,6 +89,8 @@ namespace GCS_Project
 
             await InitializeMapAsync();
 
+            PlayRtpStream(_mp1);
+
             InitializeOverlayWindow();
             InitializeOverlayTimer();
 

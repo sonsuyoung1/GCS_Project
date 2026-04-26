@@ -130,7 +130,7 @@
                                       AutoGenerateColumns="False" IsReadOnly="True" 
                                       Background="Transparent" Foreground="White" 
                                       RowBackground="Transparent" GridLinesVisibility="None" 
-                                      SelectionMode="Single" BorderThickness="0" SelectionChanged="DataGrid_SelectionChanged">
+                                      SelectionMode="Single" BorderThickness="0">
                         <DataGrid.ColumnHeaderStyle>
                             <Style TargetType="DataGridColumnHeader">
                                 <Setter Property="Background" Value="#1A2233"/>
@@ -142,7 +142,23 @@
                                 <Setter Property="Height" Value="28"/>
                             </Style>
                         </DataGrid.ColumnHeaderStyle>
-                        
+
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Style>
+                        </DataGrid.RowStyle>
+
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                            </Style>
+                        </DataGrid.CellStyle>
+
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="ID" Binding="{Binding ID}" Width="50"/>
                             <DataGridTextColumn Header="TYPE" Binding="{Binding TargetType}" Width="*"/>
@@ -152,30 +168,46 @@
                     </DataGrid>
 
                     <UniformGrid Grid.Row="2" Columns="2" Margin="0,15,0,0">
-                        <Button Content="STRIKE" 
-                                        Command="{Binding StrikeCommand}"
-                                        CommandParameter="{Binding SelectedTarget}"
-                                        Background="#EF4444" Foreground="White" 
-                                        FontWeight="Bold" FontSize="16" Height="50"
-                                        Margin="0,0,5,0" Cursor="Hand">
-                            <Button.Resources>
-                                <Style TargetType="Border">
-                                    <Setter Property="CornerRadius" Value="5"/>
+
+                        <Button Content="STRIKE"
+                                    Command="{Binding StrikeCommand}"
+                                    CommandParameter="{Binding SelectedTarget}"
+                                    FontWeight="Bold"
+                                    FontSize="16"
+                                    Height="50"
+                                    Margin="0,0,5,0"
+                                    Cursor="Hand">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource GcsButton}">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled" Value="True">
+                                            <Setter Property="Background" Value="#EF4444"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </Trigger>
+                                    </Style.Triggers>
                                 </Style>
-                            </Button.Resources>
+                            </Button.Style>
                         </Button>
 
-                        <Button Content="STRIKE STOP" 
-                                        Command="{Binding StopStrikeCommand}"
-                                        Background="#F59E0B" Foreground="White" 
-                                        FontWeight="Bold" FontSize="16" Height="50"
-                                        Margin="5,0,0,0" Cursor="Hand">
-                            <Button.Resources>
-                                <Style TargetType="Border">
-                                    <Setter Property="CornerRadius" Value="5"/>
+                        <Button Content="STRIKE STOP"
+                                    Command="{Binding StopStrikeCommand}"
+                                    FontWeight="Bold"
+                                    FontSize="16"
+                                    Height="50"
+                                    Margin="5,0,0,0"
+                                    Cursor="Hand">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource GcsButton}">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled" Value="True">
+                                            <Setter Property="Background" Value="#F59E0B"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </Trigger>
+                                    </Style.Triggers>
                                 </Style>
-                            </Button.Resources>
+                            </Button.Style>
                         </Button>
+
                     </UniformGrid>
                 </Grid>
             </Border>
