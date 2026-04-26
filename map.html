@@ -3,8 +3,10 @@
 <head>
     <meta charset="utf-8" />
     <title>Drone GCS Map</title>
+
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
     <style>
         body {
             margin: 0;
@@ -34,13 +36,12 @@
             }
         }
 
-        /*  추적 중인 타겟 강조 효과 */
         .tracking-highlight {
             border: 3px solid #ff0000;
             border-radius: 50%;
             box-shadow: 0 0 15px #ff0000;
         }
-        /* 드론 아이콘 */
+
         .drone-icon {
             width: 36px;
             height: 36px;
@@ -49,13 +50,19 @@
         }
     </style>
 </head>
+
 <body>
     <div id="map"></div>
+
     <script>
+        // =========================
+        // 1. 지도 초기화
+        // =========================
         var map = L.map('map', {
             zoomControl: false,
             attributionControl: false
         }).setView([36.6912, 126.5828], 17);
+
         const MAPBOX_TOKEN = 'pk.eyJ1Ijoiam9zZzEyMyIsImEiOiJjbWxnNXAxeGMwOGY4M2RzYTR3bGMxd2ttIn0.PZhGAnWNXBMrp8-uCwYH0g';
 
         L.tileLayer(
@@ -69,26 +76,28 @@
             }
         ).addTo(map);
 
-        // 드론 아이콘 생성 함수 
+
+        // =========================
+        // 2. 드론 마커
+        // =========================
         function createDroneIcon(deg) {
             return L.divIcon({
                 className: '',
                 html: `
-                    <div class="drone-icon" style="transform: rotate(${deg}deg);">
-                        <svg width="36" height="36" viewBox="0 0 24 24">
-                        <path d="M12 2 L19 20 L12 16 L5 20 Z"
-                            fill="#ff3b3b"
-                            stroke="white"
-                            stroke-width="1.2"/>
-                    </svg>
-                </div>
-            `,
+                        <div class="drone-icon" style="transform: rotate(${deg}deg);">
+                            <svg width="36" height="36" viewBox="0 0 24 24">
+                                <path d="M12 2 L19 20 L12 16 L5 20 Z"
+                                      fill="#ff3b3b"
+                                      stroke="white"
+                                      stroke-width="1.2"/>
+                            </svg>
+                        </div>
+                    `,
                 iconSize: [36, 36],
                 iconAnchor: [18, 18]
             });
         }
 
-        // 2. 전역 변수 설정
         let droneHeadingDeg = 0;
 
         var droneMarker = L.marker(
@@ -96,16 +105,10 @@
             { icon: createDroneIcon(droneHeadingDeg) }
         ).addTo(map);
 
-        var targetMarkers = {}; //  핵심: ID별 타겟 마커 저장소 (Dictionary)
-        var waypointMarkers = [];
-        var missionPoints = [];
-        var missionLine = L.polyline([], { color: '#e67e22', weight: 3, dashArray: '5, 10' }).addTo(map);
-
-        // --- [기능 1: 드론 위치 업데이트] ---
         function updateLocation(lat, lng, headingDeg) {
             const newLatLng = new L.LatLng(lat, lng);
-            droneMarker.setLatLng(newLatLng);
 
+            droneMarker.setLatLng(newLatLng);
             map.panTo(newLatLng);
 
             if (typeof headingDeg === 'number') {
@@ -114,93 +117,159 @@
             }
         }
 
-        // --- [기능 2: 다중 타겟 관리 (YOLO ID 기반)] ---
-        function updateTargetMarker(id, lat, lng, type, isTracked) {
-            var iconHtml = isTracked ? `<div class="target-siren tracking-highlight">🚨</div>` : `<div class="target-siren">👤</div>`;
 
-            var targetIcon = L.divIcon({
-                html: iconHtml,
-                className: 'custom-target-marker',
-                iconSize: [30, 30],
-                iconAnchor: [15, 15]
-            });
+        // =========================
+        // 3. 타겟 마커
+        // =========================
+        var targetMarkers = {};
+
+        function updateTargetMarker(id, lat, lng, type, isSelected) {
+            const color = isSelected ? "#EF4444" : "#FACC15";
+            const radius = isSelected ? 9 : 7;
 
             if (targetMarkers[id]) {
-                // 이미 존재하는 타겟이면 위치와 아이콘(추적상태)만 갱신
                 targetMarkers[id].setLatLng([lat, lng]);
-                targetMarkers[id].setIcon(targetIcon);
-            } else {
-                // 새로운 타겟이면 생성
-                var marker = L.marker([lat, lng], { icon: targetIcon }).addTo(map);
-                marker.bindPopup(`<b>ID: ${id}</b><br>Type: ${type}`);
-                targetMarkers[id] = marker;
+                targetMarkers[id].setStyle({
+                    color: color,
+                    fillColor: color
+                });
+                targetMarkers[id].setRadius(radius);
+                targetMarkers[id].bindTooltip(`ID:${id} ${type}`);
+                return;
             }
+
+            const marker = L.circleMarker([lat, lng], {
+                radius: radius,
+                color: color,
+                fillColor: color,
+                fillOpacity: 0.9,
+                weight: 2
+            }).addTo(map);
+
+            marker.bindTooltip(`ID:${id} ${type}`);
+
+            targetMarkers[id] = marker;
         }
 
-        // --- [기능 3: 이륙 마커 표시] ---
+        function selectTargetMarker(selectedId) {
+            Object.keys(targetMarkers).forEach(id => {
+                const isSelected = Number(id) === selectedId;
+                const color = isSelected ? "#EF4444" : "#FACC15";
+                const radius = isSelected ? 9 : 7;
+
+                targetMarkers[id].setStyle({
+                    color: color,
+                    fillColor: color
+                });
+
+                targetMarkers[id].setRadius(radius);
+            });
+        }
+
+        function removeTargetMarker(id) {
+            if (!targetMarkers[id]) return;
+
+            map.removeLayer(targetMarkers[id]);
+            delete targetMarkers[id];
+        }
+
+
+        // =========================
+        // 4. 이륙 지점 마커
+        // =========================
         function addTakeoffMarker(lat, lng) {
-            if (window.takeoffMarker) map.removeLayer(window.takeoffMarker);
+            if (window.takeoffMarker) {
+                map.removeLayer(window.takeoffMarker);
+            }
+
             var takeoffIcon = L.divIcon({
-                html: `<div style="
-                            background: #27ae60; 
-                            color: white; 
-                            border-radius: 15px; /* 50%에서 15px로 변경하여 예쁜 알약 모양 만들기 */
-                            padding: 4px 10px;   /* 고정된 크기 대신 글자 길이에 맞춰 늘어나도록 여백(Padding) 추가 */
-                            display: flex; 
-                            align-items: center; 
-                            justify-content: center; 
-                            font-weight: bold; 
+                html: `
+                        <div style="
+                            background: #27ae60;
+                            color: white;
+                            border-radius: 15px;
+                            padding: 4px 10px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-weight: bold;
                             font-size: 12px;
                             border: 2px solid white;
-                            box-shadow: 0 2px 5px rgba(0,0,0,0.4); /* 지도에서 확 튀게 그림자 살짝! */
-                            white-space: nowrap; /* 글자가 밑으로 안 떨어지게 꽉 잡아줌 */
-                        ">Takeoff</div>`,
-                className: '', iconSize: [25, 25], iconAnchor: [12, 12]
+                            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+                            white-space: nowrap;
+                        ">Takeoff</div>
+                    `,
+                className: '',
+                iconSize: [25, 25],
+                iconAnchor: [12, 12]
             });
-            window.takeoffMarker = L.marker([lat, lng], { icon: takeoffIcon }).addTo(map).bindPopup("Takeoff Point");
+
+            window.takeoffMarker = L.marker([lat, lng], { icon: takeoffIcon })
+                .addTo(map)
+                .bindPopup("Takeoff Point");
         }
 
-        // --- [기능 4: 웨이포인트 관리] ---
+
+        // =========================
+        // 5. 웨이포인트 관리
+        // =========================
+        var waypointMarkers = [];
+        var missionPoints = [];
+        var missionLine = L.polyline([], {
+            color: '#e67e22',
+            weight: 3,
+            dashArray: '5, 10'
+        }).addTo(map);
+
         map.on('click', function (e) {
             var lat = e.latlng.lat;
             var lng = e.latlng.lng;
             var wpNumber = waypointMarkers.length + 1;
 
             var wpIcon = L.divIcon({
-                className: '', // 기본 클래스 제거
-                html: `<div style="
-                            background: #3498db; 
-                            color: white; 
-                            border-radius: 50%; 
-                            width: 20px; 
-                            height: 20px; 
-                            display: flex; 
-                            align-items: center; 
-                            justify-content: center; 
-                            font-size: 11px; 
+                className: '',
+                html: `
+                        <div style="
+                            background: #3498db;
+                            color: white;
+                            border-radius: 50%;
+                            width: 20px;
+                            height: 20px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: 11px;
                             font-weight: bold;
                             border: 2px solid white;
-                            box-shadow: 0 0 5px rgba(0,0,0,0.5); /* 가독성을 위한 그림자 살짝 추가 */
-                            ">${wpNumber}</div>`,
+                            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+                        ">${wpNumber}</div>
+                    `,
                 iconSize: [20, 20],
                 iconAnchor: [10, 10]
             });
 
             var marker = L.marker([lat, lng], { icon: wpIcon }).addTo(map);
+
             waypointMarkers.push(marker);
             missionPoints.push([lat, lng]);
             missionLine.setLatLngs(missionPoints);
 
-            // C#으로 좌표 전송
             if (window.chrome && window.chrome.webview) {
-                window.chrome.webview.postMessage({ tag: 'ADD_WAYPOINT', lat: lat, lng: lng });
+                window.chrome.webview.postMessage({
+                    tag: 'ADD_WAYPOINT',
+                    lat: lat,
+                    lng: lng
+                });
             }
         });
 
         function undoLastWaypoint() {
             if (missionPoints.length > 0) {
                 var lastMarker = waypointMarkers.pop();
-                if (lastMarker) map.removeLayer(lastMarker);
+
+                if (lastMarker) {
+                    map.removeLayer(lastMarker);
+                }
 
                 missionPoints.pop();
                 missionLine.setLatLngs(missionPoints);
@@ -208,50 +277,63 @@
         }
 
         function clearAllWaypoints() {
-            waypointMarkers.forEach(m => map.removeLayer(m));
+            waypointMarkers.forEach(marker => map.removeLayer(marker));
+
             waypointMarkers = [];
             missionPoints = [];
             missionLine.setLatLngs([]);
         }
 
-        // --- [기능 5: 초기화 (착륙 시 등)] ---
+
+        // =========================
+        // 6. 지도 전체 초기화
+        // =========================
         function clearAllMapElements() {
-            if (window.takeoffMarker) map.removeLayer(window.takeoffMarker);
+            if (window.takeoffMarker) {
+                map.removeLayer(window.takeoffMarker);
+                window.takeoffMarker = null;
+            }
+
             clearAllWaypoints();
-            // 타겟 마커들도 모두 제거
-            Object.values(targetMarkers).forEach(m => map.removeLayer(m));
+
+            Object.values(targetMarkers).forEach(marker => map.removeLayer(marker));
             targetMarkers = {};
-        }
 
-        // --- [기능 6: 비행 궤적(History) 그리기] ---
-        let historyPolyline = null; // 전역 변수로 선언하여 기존 선을 지울 수 있게 함
-
-        function drawFlightPath(locations) {
-            // locations 형식: [[lat, lng], [lat, lng], ...]
-
-            // 1. 기존에 그려진 궤적이 있다면 지도에서 제거
             if (historyPolyline) {
                 map.removeLayer(historyPolyline);
-                historyPolyline = null; // 초기화
-            }
-
-            // 2. 좌표 데이터가 없으면 종료
-            if (!locations || locations.length === 0) return;
-
-            // 3. 새로운 빨간색 실선(Polyline) 생성
-            historyPolyline = L.polyline(locations, {
-                color: '#ff0000',      // 궤적 색상 (빨간색)
-                weight: 3,             // 선 두께
-                opacity: 0.6,          // 선 투명도
-                smoothFactor: 1        // 선 부드럽기 조절
-            }).addTo(map);
-
-            // 4. 궤적이 전체 다 보이도록 지도의 영역(Bounds)을 자동으로 맞춤
-            if (locations.length > 1) {
-                map.fitBounds(historyPolyline.getBounds(), { padding: [20, 20] });
+                historyPolyline = null;
             }
         }
 
+
+        // =========================
+        // 7. 비행 궤적 표시
+        // =========================
+        let historyPolyline = null;
+
+        function drawFlightPath(locations) {
+            if (historyPolyline) {
+                map.removeLayer(historyPolyline);
+                historyPolyline = null;
+            }
+
+            if (!locations || locations.length === 0) {
+                return;
+            }
+
+            historyPolyline = L.polyline(locations, {
+                color: '#ff0000',
+                weight: 3,
+                opacity: 0.6,
+                smoothFactor: 1
+            }).addTo(map);
+
+            if (locations.length > 1) {
+                map.fitBounds(historyPolyline.getBounds(), {
+                    padding: [20, 20]
+                });
+            }
+        }
     </script>
 </body>
 </html>

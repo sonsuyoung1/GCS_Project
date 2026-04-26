@@ -47,7 +47,7 @@ namespace GCS_Project
         {
             if (player == null || _libVLC == null) return;
 
-            string sdpPath = @"C:\Users\82106\OneDrive\바탕 화면\stream.sdp";
+            string sdpPath = @"C:\Users\Master\OneDrive\바탕 화면\stream.sdp";
 
             if (!File.Exists(sdpPath))
             {

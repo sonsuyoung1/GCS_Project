@@ -142,6 +142,36 @@ namespace GCS_Project
                     await _mapController.DrawHistoryPath(path);
                 });
             };
+
+            _viewModel.TargetMarkerUpdated += async (id, lat, lng, type, isSelected) =>
+            {
+                if (_mapController == null) return;
+
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    await _mapController.UpdateTargetOnMap(id, lat, lng, type, isSelected);
+                });
+            };
+
+            _viewModel.TargetSelectionChanged += async (selectedId) =>
+            {
+                if (_mapController == null) return;
+
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    await _mapController.SelectTargetMarkerOnMap(selectedId);
+                });
+            };
+
+            _viewModel.TargetMarkerRemoved += async (id) =>
+            {
+                if (_mapController == null) return;
+
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    await _mapController.RemoveTargetMarkerOnMap(id);
+                });
+            };
         }
 
         #endregion

@@ -214,6 +214,9 @@ namespace GCS_Project.ViewModels
             var targetToStrike = SelectedTarget;
             bool impactImminentLogged = false;
 
+            // 타격 대상으로 선택된 타겟을 DB에 기록
+            SaveTargetLogAsync(targetToStrike, isStriked: true);
+
             AppendLog($"[작전] 타겟(ID:{targetToStrike.ID})으로 종말 유도 돌격을 개시합니다.");
 
             await _mavlinkService.ChangeTargetSpeed(20.0f);

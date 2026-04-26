@@ -38,6 +38,8 @@ namespace GCS_Project.Data
     public class TargetLog
     {
         public int Id { get; set; }
+        public int FlightId { get; set; }
+        public int TargetId { get; set; }
         public DateTime Timestamp { get; set; }
         public string TargetType { get; set; } = string.Empty; // 예: "Tank", "Vehicle"
         public double Latitude { get; set; }

@@ -15,30 +15,25 @@ namespace GCS_Project.ViewModels
     public partial class ViewModel : ObservableObject
     {
         #region [1. 비행 모드 상수]
-
         private const string MODE_IDLE = "IDLE";
         private const string MODE_TAKEOFF = "TAKEOFF";
         private const string MODE_MISSION = "MISSION";
         private const string MODE_MANUAL = "MANUAL";
         private const string MODE_HOLD = "HOLD";
-
         #endregion
 
 
         #region [2. 서비스 및 상태 객체]
-
         private readonly MavlinkService _mavlinkService;
         private readonly YoloMetaUdpService _yoloMetaUdpService;
 
         private readonly DroneState _uiDrone = new DroneState();
         private readonly ObservableCollection<DetectedTarget> _detectedTargets = new();
         private readonly List<GeoPoint> _waypoints = new List<GeoPoint>();
-
         #endregion
 
 
         #region [3. 화면 표시 상태]
-
         private string _flightMode = MODE_IDLE;
         private string _chatLog = "드론 연결 대기 중...";
         private readonly StringBuilder _chatLogBuffer = new StringBuilder("드론 연결 대기 중...");
@@ -48,12 +43,10 @@ namespace GCS_Project.ViewModels
 
         private double _pitchOffset;
         private double _headingOffset;
-
         #endregion
 
 
         #region [4. 비행 및 미션 상태]
-
         private int _currentWaypointCount = 0;
         private bool _mavStarting;
         private bool _isFlyingHigh = false;
@@ -62,33 +55,28 @@ namespace GCS_Project.ViewModels
 
         private int _currentFlightId;
         private readonly DateTime _programStartTime = DateTime.Now;
-
         #endregion
 
 
         #region [5. 타겟 및 타격 상태]
-
         private DetectedTarget? _selectedTarget;
         private bool _isStriking = false;
         private System.Timers.Timer? _targetLostTimer;
-
+        private DateTime _lastTargetLogSaveTime = DateTime.MinValue;
         #endregion
 
 
         #region [6. 탐색 및 기록 상태]
-
         private CancellationTokenSource? _scanCts;
         private bool _isScanning = false;
         private bool _batteryWarningShown = false;
 
         private DateTime? _selectedHistoryDate = DateTime.Today;
         private bool _isHistoryVisible = false;
-
         #endregion
 
 
         #region [7. 버튼 상태 갱신용 필드]
-
         // 버튼 활성화에 영향을 주는 값만 묶어 불필요한 커맨드 갱신을 줄인다.
         private sealed record CommandStateSnapshot(
             string FlightMode,
@@ -100,19 +88,15 @@ namespace GCS_Project.ViewModels
         );
 
         private CommandStateSnapshot? _lastCommandStateSnapshot;
-
         #endregion
 
 
         #region [8. 타이머]
-
         private System.Windows.Threading.DispatcherTimer? _clockTimer;
-
         #endregion
 
 
         #region [9. 기본 속성]
-
         public MavlinkService MavlinkService => _mavlinkService;
         public DroneState Drone => _uiDrone;
         public ObservableCollection<DetectedTarget> DetectedTargets => _detectedTargets;
@@ -161,6 +145,9 @@ namespace GCS_Project.ViewModels
                 if (SetProperty(ref _selectedTarget, value))
                 {
                     RefreshCommandStatesIfNeeded();
+
+                    // 선택된 타겟 ID를 지도에 알림
+                    TargetSelectionChanged?.Invoke(value?.ID);
                 }
             }
         }
@@ -200,12 +187,10 @@ namespace GCS_Project.ViewModels
                 }
             }
         }
-
         #endregion
 
 
         #region [10. 버튼 활성화 조건]
-
         public bool IsArmEnabled =>
             FlightMode == MODE_IDLE &&
             Drone.IsConnected &&
@@ -261,12 +246,10 @@ namespace GCS_Project.ViewModels
         public bool IsStopStrikeEnabled =>
             IsStriking &&
             Drone.IsConnected;
-
         #endregion
 
 
         #region [11. 커맨드]
-
         public ICommand StartMissionCommand { get; private set; } = null!;
         public ICommand StopMissionCommand { get; private set; } = null!;
 
@@ -289,12 +272,10 @@ namespace GCS_Project.ViewModels
 
         public ICommand StrikeCommand { get; private set; } = null!;
         public ICommand StopStrikeCommand { get; private set; } = null!;
-
         #endregion
 
 
         #region [12. View 통신용 이벤트]
-
         public event Action? UndoWaypointRequested;
         public event Action? ClearWaypointsRequested;
         public event Action? AllClearRequested;
@@ -304,12 +285,13 @@ namespace GCS_Project.ViewModels
         public event Action<double, double>? PersonDetectedOnMap;
 
         public event Action<List<Tuple<double, double>>>? HistoryPathRequested;
-
+        public event Action<int, double, double, string, bool>? TargetMarkerUpdated;
+        public event Action<int?>? TargetSelectionChanged;
+        public event Action<int>? TargetMarkerRemoved;
         #endregion
 
 
         #region [13. 생성자]
-
         public ViewModel()
         {
             _mavlinkService = new MavlinkService();
@@ -322,12 +304,10 @@ namespace GCS_Project.ViewModels
             InitializeService();
             InitializeFlightSession();
         }
-
         #endregion
 
 
         #region [14. 초기화 메서드]
-
         // 버튼과 UI 명령에 연결될 커맨드를 초기화한다.
         private void InitializeCommands()
         {
@@ -465,12 +445,10 @@ namespace GCS_Project.ViewModels
 
             System.Diagnostics.Debug.WriteLine($"[세션] 이번 비행 아이디는 {_currentFlightId}입니다.");
         }
-
         #endregion
 
 
         #region [15. 보조 메서드]
-
         // 조회 날짜가 바뀌면 지도에 표시 중인 과거 비행 궤적을 초기화한다.
         private void ResetHistoryPathWhenDateChanged()
         {
@@ -483,12 +461,10 @@ namespace GCS_Project.ViewModels
             Application.Current.Dispatcher.Invoke(() =>
                 AppendLog("[시스템] 조회 날짜가 변경되어 지도의 궤적을 초기화합니다."));
         }
-
         #endregion
 
 
         #region [16. 리소스 정리]
-
         // ViewModel에서 사용한 타이머와 통신 서비스를 정리한다.
         public void Dispose()
         {
@@ -501,7 +477,6 @@ namespace GCS_Project.ViewModels
             _ = _mavlinkService?.StopAsync();
             _ = _yoloMetaUdpService?.StopAsync();
         }
-
         #endregion
     }
 }
