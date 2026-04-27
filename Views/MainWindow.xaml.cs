@@ -38,7 +38,6 @@ namespace GCS_Project
 
 
         #region [2. 생성자]
-
         public MainWindow()
         {
             InitializeComponent();
@@ -47,12 +46,10 @@ namespace GCS_Project
             InitializeVideoPlayer();
             SubscribeWindowEvents();
         }
-
         #endregion
 
 
         #region [3. 초기화]
-
         // ViewModel을 생성하고 DataContext 및 타겟 변경 이벤트를 연결한다.
         private void InitializeViewModel()
         {

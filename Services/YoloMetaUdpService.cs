@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace GCS_Project.xServices
+namespace GCS_Project.Services
 {
     public class YoloMetaUdpService
     {

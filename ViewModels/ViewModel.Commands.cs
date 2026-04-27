@@ -212,55 +212,13 @@ namespace GCS_Project.ViewModels
             IsStriking = true;
 
             var targetToStrike = SelectedTarget;
-            bool impactImminentLogged = false;
 
-            // 타격 대상으로 선택된 타겟을 DB에 기록
             SaveTargetLogAsync(targetToStrike, isStriked: true);
 
-            AppendLog($"[작전] 타겟(ID:{targetToStrike.ID})으로 종말 유도 돌격을 개시합니다.");
+            await _guidanceCommandService.SendSelectedTargetAsync(targetToStrike.ID);
+            await _guidanceCommandService.SendStartGuidanceAsync();
 
-            await _mavlinkService.ChangeTargetSpeed(20.0f);
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    while (IsStriking)
-                    {
-                        if (SelectedTarget != null)
-                        {
-                            targetToStrike = SelectedTarget;
-                        }
-
-                        double distance = CalculateDistance(
-                            Drone.Latitude,
-                            Drone.Longitude,
-                            targetToStrike.Lat,
-                            targetToStrike.Lng
-                        );
-
-                        if (distance <= 3.0 && !impactImminentLogged)
-                        {
-                            impactImminentLogged = true;
-
-                            Application.Current.Dispatcher.Invoke(() =>
-                            {
-                                AppendLog("🚨 [경고] 타겟 명중 임박! 충돌 대비!");
-                            });
-                        }
-
-                        await _mavlinkService.GoTo(targetToStrike.Lat, targetToStrike.Lng, 0f);
-                        await Task.Delay(500);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        AppendLog($"[오류] 타격 유도 루프 중단: {ex.Message}");
-                    });
-                }
-            });
+            AppendLog($"[작전] 타겟(ID:{targetToStrike.ID}) 선택 및 타격 가이던스 시작 명령 전송");
         }
 
         // 타격 루프를 중지하고 기체를 제자리 유지 상태로 전환한다.
@@ -269,9 +227,10 @@ namespace GCS_Project.ViewModels
             if (!IsStriking) return;
 
             IsStriking = false;
-            AppendLog("[작전] 타격 중지. 제자리 비행으로 전환합니다.");
 
-            await _mavlinkService.Hold();
+            await _guidanceCommandService.SendStopGuidanceAsync();
+
+            AppendLog("[작전] 타격 가이던스 중지 명령 전송");
         }
 
         #endregion
@@ -367,7 +326,6 @@ namespace GCS_Project.ViewModels
                 .OrderBy(x => x.Timestamp)
                 .ToList();
         }
-
         #endregion
 
 

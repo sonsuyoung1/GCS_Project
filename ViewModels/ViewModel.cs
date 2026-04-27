@@ -2,7 +2,7 @@
 using Asv.Mavlink.Minimal;
 using GCS_Project.Data;
 using GCS_Project.Models;
-using GCS_Project.xServices;
+using GCS_Project.Services;
 using System;
 using System.Collections.ObjectModel;
 using System.Text;
@@ -63,6 +63,7 @@ namespace GCS_Project.ViewModels
         private bool _isStriking = false;
         private System.Timers.Timer? _targetLostTimer;
         private DateTime _lastTargetLogSaveTime = DateTime.MinValue;
+        private readonly GuidanceCommandUdpService _guidanceCommandService;
         #endregion
 
 
@@ -148,6 +149,11 @@ namespace GCS_Project.ViewModels
 
                     // 선택된 타겟 ID를 지도에 알림
                     TargetSelectionChanged?.Invoke(value?.ID);
+                    if (value != null)
+                    {
+                        _ = _guidanceCommandService.SendSelectedTargetAsync(value.ID);
+                        AppendLog($"[GUIDANCE] 선택 타겟 ID 전송: {value.ID}");
+                    }
                 }
             }
         }
@@ -296,6 +302,7 @@ namespace GCS_Project.ViewModels
         {
             _mavlinkService = new MavlinkService();
             _yoloMetaUdpService = new YoloMetaUdpService(5001);
+            _guidanceCommandService = new GuidanceCommandUdpService("192.168.0.62", 6001);
 
             InitializeCommands();
             InitializeTargetLostTimer();

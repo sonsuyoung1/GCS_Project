@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace GCS_Project.xServices
+namespace GCS_Project.Services
 {
     public partial class MavlinkService
     {
