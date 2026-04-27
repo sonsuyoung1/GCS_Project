@@ -14,7 +14,6 @@ namespace GCS_Project.ViewModels
         private DateTime _lastDbSaveTime = DateTime.MinValue;
 
         #region [1. 버튼 상태 갱신]
-
         // 버튼 활성화에 영향을 주는 현재 상태를 스냅샷으로 만든다.
         private CommandStateSnapshot CaptureCommandState()
         {
@@ -39,7 +38,6 @@ namespace GCS_Project.ViewModels
                 NotifyCommandStates();
             }
         }
-
         #endregion
 
 
@@ -82,7 +80,7 @@ namespace GCS_Project.ViewModels
 
             try
             {
-                await _mavlinkService.StartAsync("0.0.0.0", 14550, "192.168.0.61", 14551);
+                await _mavlinkService.StartAsync("0.0.0.0", 14550, "192.168.0.62", 14551);
                 AppendLog("[시스템] MAVLink 연결 성공");
 
                 await _yoloMetaUdpService.StartAsync();
@@ -249,8 +247,6 @@ namespace GCS_Project.ViewModels
             _uiDrone.IsTargetDetected = state.IsTargetDetected;
             _uiDrone.TargetLat = state.TargetLat;
             _uiDrone.TargetLng = state.TargetLng;
-            _uiDrone.TargetAltitude = state.TargetAltitude;
-            _uiDrone.TargetSpeed = state.TargetSpeed;
         }
 
         // 배터리 경고 표시 여부를 내부 플래그로 관리한다.

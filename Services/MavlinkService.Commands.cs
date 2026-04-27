@@ -2,11 +2,12 @@
 using Asv.Mavlink;
 using Asv.Mavlink.Common;
 using Asv.Mavlink.Minimal;
+using GCS_Project.Services;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace GCS_Project.xServices
+namespace GCS_Project.Services
 {
     public partial class MavlinkService
     {
