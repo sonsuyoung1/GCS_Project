@@ -211,6 +211,9 @@ namespace GCS_Project.ViewModels
 
             IsStriking = true;
 
+            _yoloMetaUdpService.SendStartGuidance();
+            AppendLog("[GCS-CMD] Guidance 시작 명령 전송");
+
             var targetToStrike = SelectedTarget;
             bool impactImminentLogged = false;
 
@@ -268,7 +271,12 @@ namespace GCS_Project.ViewModels
         {
             if (!IsStriking) return;
 
+            // ✅ ROS2 Guidance 중지
+            _yoloMetaUdpService.SendStopGuidance();
+            AppendLog("[GCS-CMD] Guidance 중지 명령 전송");
+
             IsStriking = false;
+
             AppendLog("[작전] 타격 중지. 제자리 비행으로 전환합니다.");
 
             await _mavlinkService.Hold();

@@ -148,6 +148,13 @@ namespace GCS_Project.ViewModels
 
                     // 선택된 타겟 ID를 지도에 알림
                     TargetSelectionChanged?.Invoke(value?.ID);
+
+                    // 선택된 타겟 ID를 ROS2로 전송
+                    if (value != null)
+                    {
+                        _yoloMetaUdpService.SendTargetId(value.ID);
+                        AppendLog($"[GCS-CMD] 선택 타겟 ID 전송: {value.ID}");
+                    }
                 }
             }
         }
