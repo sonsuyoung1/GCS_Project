@@ -370,6 +370,7 @@
                     <Button Content="Return" Command="{Binding RtlCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="Arm" Command="{Binding ArmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="Disarm" Command="{Binding DisarmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
+                    <Button Content="PX4 Connect" Command="{Binding ConnectPx4MavlinkCommand}" Background="#4A5568" Style="{StaticResource GcsButton}"/>
 
                     <ToggleButton x:Name="ManualModeToggle" 
                                           Content="Manual Mode" 
@@ -536,7 +537,7 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <TextBlock Grid.Row="0" Text="System Log and AI Command" Foreground="#3B82F6" 
+                        <TextBlock Grid.Row="0" Text="System Log" Foreground="#3B82F6" 
                    FontWeight="Bold" FontSize="11" Margin="0,0,0,5"/>
 
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,5">
@@ -549,36 +550,6 @@
                                              BorderThickness="0" 
                                              FontSize="14" />
                         </ScrollViewer>
-
-                        <Border Grid.Row="2" Background="#1E293B" CornerRadius="5" Padding="5">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-
-                                <TextBlock Text=">" Foreground="#38BDF8" FontWeight="Bold" 
-                                                    VerticalAlignment="Center" Margin="5,0,5,0"/>
-
-                                <TextBox x:Name="AiCommandTextBox"
-                                         Grid.Column="1"
-                                         Text="{Binding UserInputCommand, UpdateSourceTrigger=PropertyChanged}"
-                                         Background="Transparent"
-                                         Foreground="#F1F5F9"
-                                         BorderThickness="0"
-                                         CaretBrush="#38BDF8"
-                                         VerticalContentAlignment="Center"
-                                         FontSize="12"
-                                         AcceptsReturn="False"
-                                         KeyDown="AiCommandTextBox_KeyDown"/>
-
-                                <Button Grid.Column="2" Content="SEND" Command="{Binding SendAICommand}"
-                                                Background="Transparent" Foreground="#38BDF8" FontSize="10" 
-                                                FontWeight="Bold" BorderThickness="0" Cursor="Hand" Margin="5,0,0,0"/>
-                            </Grid>
-                        </Border>
-                        
                     </Grid>
                 </Border>
             </Grid>

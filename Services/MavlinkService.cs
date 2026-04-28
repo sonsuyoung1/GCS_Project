@@ -100,11 +100,7 @@ namespace GCS_Project.Services
         #region [6. 서비스 시작]
 
         // MAVLink 라우터를 생성하고 PX4 기체 연결을 시작한다.
-        public async Task StartAsync(
-            string listenHost = "0.0.0.0",
-            int listenPort = 14550,
-            string droneIp = "192.168.0.62",
-            int dronePort = 14551)
+        public async Task StartAsync(string listenHost, int listenPort, string droneIp, int dronePort)
         {
             if (_router != null) return;
 

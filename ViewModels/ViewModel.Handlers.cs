@@ -80,7 +80,7 @@ namespace GCS_Project.ViewModels
 
             try
             {
-                await _mavlinkService.StartAsync("0.0.0.0", 14550, "192.168.0.62", 14551);
+                await _mavlinkService.StartAsync("0.0.0.0", 14550, "192.168.0.61", 14551);
                 AppendLog("[시스템] MAVLink 연결 성공");
 
                 await _yoloMetaUdpService.StartAsync();
@@ -132,17 +132,6 @@ namespace GCS_Project.ViewModels
                     RefreshCommandStatesIfNeeded();
                 });
             };
-
-            // 로그 출력이 UI 지연을 만들 경우 아래 이벤트 구독은 비활성화한다.
-            /*
-            _mavlinkService.OnLogReceived += (message) =>
-            {
-                Application.Current.Dispatcher.BeginInvoke(() =>
-                {
-                    AppendLog(message);
-                });
-            };
-            */
         }
 
         // YOLO UDP 서비스에서 수신한 타겟 목록 이벤트를 연결한다.
@@ -155,22 +144,18 @@ namespace GCS_Project.ViewModels
                     ApplyDetectedTargets(targets);
                 });
             };
-
-            // 로그 출력이 UI 지연을 만들 경우 아래 이벤트 구독은 비활성화한다.
-            /*
-            _yoloMetaUdpService.OnLogReceived += (message) =>
-            {
-                Application.Current.Dispatcher.BeginInvoke(() =>
-                {
-                    AppendLog(message);
-                });
-            };
-            */
         }
 
         // PX4에서 받은 실제 비행 모드를 ViewModel의 FlightMode로 변환한다.
         private void ApplyFlightModeFromPx4(string newMode)
         {
+            // 시동이 꺼져 있으면 PX4 모드가 HOLD/POSCTL이어도 GCS에서는 대기 상태로 표시한다.
+            if (!Drone.IsArmed)
+            {
+                FlightMode = MODE_IDLE;
+                return;
+            }
+
             switch (newMode)
             {
                 case "TAKEOFF":

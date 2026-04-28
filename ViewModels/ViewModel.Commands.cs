@@ -203,7 +203,7 @@ namespace GCS_Project.ViewModels
             return EarthRadiusMeters * c;
         }
 
-        // 선택된 타겟을 향해 반복적으로 GoTo 명령을 보내는 타격 루프를 시작한다.
+        // 선택된 타겟 ID와 Guidance 시작 명령을 Ubuntu ROS2 쪽으로 전송한다.
         private async void ExecuteStrike()
         {
             if (SelectedTarget == null) return;
@@ -213,31 +213,42 @@ namespace GCS_Project.ViewModels
 
             var targetToStrike = SelectedTarget;
 
+            // 선택 타겟 ID를 tracker 쪽으로 전송
+            _yoloMetaUdpService.SendTargetId(targetToStrike.ID);
+            AppendLog($"[GCS-CMD] 선택 타겟 ID 전송: {targetToStrike.ID}");
+
+            // 타격 대상으로 선택된 타겟을 DB에 기록
             SaveTargetLogAsync(targetToStrike, isStriked: true);
 
-            await _guidanceCommandService.SendSelectedTargetAsync(targetToStrike.ID);
-            await _guidanceCommandService.SendStartGuidanceAsync();
+            // Guidance 시작 명령 전송
+            _yoloMetaUdpService.SendStartGuidance();
+            AppendLog("[GCS-CMD] Guidance 시작 명령 전송");
 
-            AppendLog($"[작전] 타겟(ID:{targetToStrike.ID}) 선택 및 타격 가이던스 시작 명령 전송");
+            AppendLog($"[작전] 타겟(ID:{targetToStrike.ID})으로 타격 가이던스를 시작합니다.");
+
+            await Task.CompletedTask;
         }
 
-        // 타격 루프를 중지하고 기체를 제자리 유지 상태로 전환한다.
+        // Guidance 중지 명령을 전송하고 타격 상태를 해제한다.
         private async void ExecuteStopStrike()
         {
             if (!IsStriking) return;
 
+            // Guidance 중지 명령 전송
+            _yoloMetaUdpService.SendStopGuidance();
+            AppendLog("[GCS-CMD] Guidance 중지 명령 전송");
+
             IsStriking = false;
 
-            await _guidanceCommandService.SendStopGuidanceAsync();
+            AppendLog("[작전] 타격 가이던스를 중지합니다.");
 
-            AppendLog("[작전] 타격 가이던스 중지 명령 전송");
+            await _mavlinkService.Hold();
         }
 
         #endregion
 
 
         #region [4. 비행 기록 조회]
-
         // 선택된 날짜 또는 현재 세션의 비행 궤적을 지도에 표시하거나 숨긴다.
         private async Task ExecuteShowHistory()
         {
