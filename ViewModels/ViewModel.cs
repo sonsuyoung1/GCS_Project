@@ -30,6 +30,7 @@ namespace GCS_Project.ViewModels
         private readonly DroneState _uiDrone = new DroneState();
         private readonly ObservableCollection<DetectedTarget> _detectedTargets = new();
         private readonly List<GeoPoint> _waypoints = new List<GeoPoint>();
+        private readonly UbuntuCommandService _ubuntuCommandService;
         #endregion
 
 
@@ -38,7 +39,6 @@ namespace GCS_Project.ViewModels
         private string _chatLog = "드론 연결 대기 중...";
         private readonly StringBuilder _chatLogBuffer = new StringBuilder("드론 연결 대기 중...");
 
-        private string _userInputCommand = "";
         private string _currentDateTime = "";
 
         private double _pitchOffset;
@@ -63,7 +63,6 @@ namespace GCS_Project.ViewModels
         private bool _isStriking = false;
         private System.Timers.Timer? _targetLostTimer;
         private DateTime _lastTargetLogSaveTime = DateTime.MinValue;
-        private readonly GuidanceCommandUdpService _guidanceCommandService;
         #endregion
 
 
@@ -120,18 +119,6 @@ namespace GCS_Project.ViewModels
             set => SetProperty(ref _chatLog, value);
         }
 
-        public string UserInputCommand
-        {
-            get => _userInputCommand;
-            set
-            {
-                if (SetProperty(ref _userInputCommand, value))
-                {
-                    (SendAICommand as RelayCommand)?.NotifyCanExecuteChanged();
-                }
-            }
-        }
-
         public string CurrentDateTime
         {
             get => _currentDateTime;
@@ -151,7 +138,7 @@ namespace GCS_Project.ViewModels
                     TargetSelectionChanged?.Invoke(value?.ID);
                     if (value != null)
                     {
-                        _ = _guidanceCommandService.SendSelectedTargetAsync(value.ID);
+                        _yoloMetaUdpService.SendTargetId(value.ID);
                         AppendLog($"[GUIDANCE] 선택 타겟 ID 전송: {value.ID}");
                     }
                 }
@@ -273,11 +260,12 @@ namespace GCS_Project.ViewModels
         public ICommand IncreaseSpeedCommand { get; private set; } = null!;
         public ICommand DecreaseSpeedCommand { get; private set; } = null!;
 
-        public ICommand SendAICommand { get; private set; } = null!;
         public ICommand ShowHistoryCommand { get; private set; } = null!;
+        public ICommand ConnectPx4MavlinkCommand { get; private set; } = null!;
 
         public ICommand StrikeCommand { get; private set; } = null!;
         public ICommand StopStrikeCommand { get; private set; } = null!;
+
         #endregion
 
 
@@ -301,8 +289,17 @@ namespace GCS_Project.ViewModels
         public ViewModel()
         {
             _mavlinkService = new MavlinkService();
-            _yoloMetaUdpService = new YoloMetaUdpService(5001);
-            _guidanceCommandService = new GuidanceCommandUdpService("192.168.0.62", 6001);
+            _yoloMetaUdpService = new YoloMetaUdpService(
+                listenPort: 5001,
+                rosCommandIp: "192.168.0.61",
+                rosCommandPort: 5006
+            );
+
+            _ubuntuCommandService = new UbuntuCommandService(
+                host: "192.168.0.61",      // 팀원 Ubuntu IP
+                username: "joseonggeon",
+                password: "1234"
+            );
 
             InitializeCommands();
             InitializeTargetLostTimer();
@@ -334,11 +331,8 @@ namespace GCS_Project.ViewModels
             StopStrikeCommand = new RelayCommand(ExecuteStopStrike, () => IsStopStrikeEnabled);
 
             ShowHistoryCommand = new RelayCommand(async () => await ExecuteShowHistory());
+            ConnectPx4MavlinkCommand = new RelayCommand(async () => await ExecuteConnectPx4Mavlink());
 
-            SendAICommand = new RelayCommand(
-                async () => await ExecuteSendAICommand(),
-                () => !string.IsNullOrWhiteSpace(UserInputCommand)
-            );
 
             InitializeAltitudeCommands();
             InitializeSpeedCommands();
@@ -467,6 +461,23 @@ namespace GCS_Project.ViewModels
 
             Application.Current.Dispatcher.Invoke(() =>
                 AppendLog("[시스템] 조회 날짜가 변경되어 지도의 궤적을 초기화합니다."));
+        }
+
+        // PX4 연결 실행 메서드
+        private async Task ExecuteConnectPx4Mavlink()
+        {
+            try
+            {
+                string myGcsIp = "192.168.0.46"; // 네 Windows GCS IP
+
+                await _ubuntuCommandService.StartMavlinkToGcsAsync(myGcsIp);
+
+                AppendLog($"[PX4] Ubuntu PX4에 MAVLink 연결 명령 전송 완료: {myGcsIp}");
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[PX4][오류] MAVLink 자동 연결 실패: {ex.Message}");
+            }
         }
         #endregion
 

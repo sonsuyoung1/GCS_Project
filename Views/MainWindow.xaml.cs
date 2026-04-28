@@ -98,23 +98,5 @@ namespace GCS_Project
         }
 
         #endregion
-
-        private void AiCommandTextBox_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key != Key.Enter)
-                return;
-
-            if (_viewModel == null)
-                return;
-
-            if (_viewModel.SendAICommand.CanExecute(null))
-            {
-                _viewModel.SendAICommand.Execute(null);
-            }
-
-            e.Handled = true;
-        }
-
-        
     }
 }
