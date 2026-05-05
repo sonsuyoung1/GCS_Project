@@ -16,16 +16,13 @@ namespace GCS_Project.Services
     public partial class MavlinkService : IAsyncDisposable
     {
         #region [1. 상수]
-
         private const string GcsRouterId = "GCS_ROUTER";
         private const int GcsSystemId = 255;
         private const int GcsComponentId = 190;
-
         #endregion
 
 
         #region [2. MAVLink 핵심 필드]
-
         private IProtocolFactory? _protocol;
         private IProtocolRouter? _router;
         private IDeviceExplorer? _explorer;
@@ -38,7 +35,6 @@ namespace GCS_Project.Services
         private DateTime _lastHeartbeatUtc = DateTime.MinValue;
         private Task? _linkWatchdogTask;
         private IDisposable? _uiUpdateTimer;
-
         #endregion
 
 

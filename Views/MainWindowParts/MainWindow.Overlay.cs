@@ -357,8 +357,8 @@ namespace GCS_Project
             if (rectWidth <= 1 || rectHeight <= 1) return;
 
             bool isSelected =
-                _selectedTargetId.HasValue &&
-                target.ID == _selectedTargetId.Value;
+                (_selectedTargetId.HasValue && target.ID == _selectedTargetId.Value) ||
+                (_viewModel?.SelectedTarget != null && target.ID == _viewModel.SelectedTarget.ID);
 
             DrawRectangle(canvas, rectLeft, rectTop, rectWidth, rectHeight, isSelected);
             DrawTargetLabel(canvas, target, rectLeft, rectTop);

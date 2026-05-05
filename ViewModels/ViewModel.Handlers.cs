@@ -42,7 +42,6 @@ namespace GCS_Project.ViewModels
 
 
         #region [2. 로그 처리]
-
         // 로그를 버퍼에 누적하고 길이가 길어지면 일부만 유지한다.
         private void AppendLog(string message)
         {
@@ -62,12 +61,10 @@ namespace GCS_Project.ViewModels
 
             ChatLog = _chatLogBuffer.ToString();
         }
-
         #endregion
 
 
         #region [3. 서비스 초기화 및 이벤트 연결]
-
         // MAVLink와 YOLO UDP 서비스를 시작하고 이벤트를 ViewModel에 연결한다.
         private async void InitializeService()
         {
@@ -185,7 +182,6 @@ namespace GCS_Project.ViewModels
                     break;
             }
         }
-
         #endregion
 
 
@@ -556,7 +552,7 @@ namespace GCS_Project.ViewModels
             {
                 await _mavlinkService.SetFlightMode(
                     MavModeFlag.MavModeFlagCustomModeEnabled,
-                    2
+                    3
                 );
 
                 _mavlinkService.StartManualControl();

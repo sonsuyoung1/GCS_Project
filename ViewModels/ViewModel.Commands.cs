@@ -37,7 +37,7 @@ namespace GCS_Project.ViewModels
             {
                 await _mavlinkService.StopMission();
 
-                FlightMode = MODE_TAKEOFF;
+                FlightMode = MODE_HOLD;
                 AppendLog("[명령] 미션을 중단했습니다.");
             }
             catch (Exception ex)
@@ -342,69 +342,6 @@ namespace GCS_Project.ViewModels
 
         #region [5. 탐색 명령]
 
-        // 지정된 시간 동안 제자리 회전 탐색을 수행한다.
-        private async Task ExecuteScan(double seconds)
-        {
-            try
-            {
-                if (_isScanning)
-                {
-                    AppendLog("[시스템] 이미 탐색 중입니다.");
-                    return;
-                }
-
-                if (!Drone.IsArmed)
-                {
-                    AppendLog("[시스템] 시동 후에만 탐색할 수 있습니다.");
-                    return;
-                }
-
-                if (seconds <= 0)
-                {
-                    seconds = 10;
-                }
-
-                _scanCts?.Cancel();
-                _scanCts = new CancellationTokenSource();
-
-                CancellationToken token = _scanCts.Token;
-
-                _isScanning = true;
-                AppendLog($"[시스템] {seconds:F0}초 동안 회전 탐색을 시작합니다.");
-
-                _mavlinkService.StartManualControl();
-
-                int totalMs = (int)(seconds * 1000);
-                int stepMs = 100;
-                int elapsed = 0;
-
-                while (elapsed < totalMs && !token.IsCancellationRequested)
-                {
-                    _mavlinkService.SetJoystick(0, 0, 500, 250);
-
-                    await Task.Delay(stepMs, token);
-                    elapsed += stepMs;
-                }
-
-                if (!token.IsCancellationRequested)
-                {
-                    AppendLog("[시스템] 회전 탐색을 종료합니다.");
-                }
-            }
-            catch (TaskCanceledException)
-            {
-                AppendLog("[시스템] 회전 탐색이 중단되었습니다.");
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"[오류] 회전 탐색 실패: {ex.Message}");
-            }
-            finally
-            {
-                StopScanControl();
-            }
-        }
-
         // 진행 중인 회전 탐색을 중지한다.
         private void ExecuteStopScan()
         {
@@ -412,19 +349,98 @@ namespace GCS_Project.ViewModels
             {
                 if (!_isScanning)
                 {
-                    AppendLog("[시스템] 현재 탐색 중이 아닙니다.");
+                    AppendLog("[시스템] 현재 360도 탐색 중이 아닙니다.");
                     return;
                 }
 
                 _scanCts?.Cancel();
                 StopScanControl();
 
-                AppendLog("[시스템] 탐색을 중지합니다.");
+                RefreshCommandStatesIfNeeded();
+
+                AppendLog("[시스템] 360도 탐색을 중지합니다.");
             }
             catch (Exception ex)
             {
-                AppendLog($"[오류] 탐색 중지 실패: {ex.Message}");
+                AppendLog($"[오류] 360도 탐색 중지 실패: {ex.Message}");
             }
+        }
+
+        private async Task ExecuteScan360()
+        {
+            try
+            {
+                if (_isScanning)
+                {
+                    AppendLog("[시스템] 이미 360도 탐색 중입니다.");
+                    return;
+                }
+
+                if (!Drone.IsArmed || !Drone.IsConnected)
+                {
+                    AppendLog("[시스템] 드론 연결 및 시동 후 360도 탐색이 가능합니다.");
+                    return;
+                }
+
+                _scanCts?.Cancel();
+                _scanCts = new CancellationTokenSource();
+                CancellationToken token = _scanCts.Token;
+
+                _isScanning = true;
+                RefreshCommandStatesIfNeeded();
+
+                double startYaw = Drone.Yaw;
+                double accumulatedYaw = 0;
+                double previousYaw = startYaw;
+
+                AppendLog($"[시스템] 360도 회전 탐색 시작. 시작 Yaw: {startYaw:F1}°");
+
+                _mavlinkService.StartManualControl();
+
+                short yawSpeed = 250;
+
+                while (accumulatedYaw < 360.0 && !token.IsCancellationRequested)
+                {
+                    _mavlinkService.SetJoystick(0, 0, 500, yawSpeed);
+
+                    await Task.Delay(100, token);
+
+                    double currentYaw = Drone.Yaw;
+                    double delta = GetYawDelta(previousYaw, currentYaw);
+
+                    accumulatedYaw += Math.Abs(delta);
+                    previousYaw = currentYaw;
+                }
+
+                if (!token.IsCancellationRequested)
+                {
+                    AppendLog("[시스템] 360도 회전 탐색 완료");
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                AppendLog("[시스템] 360도 회전 탐색이 중지되었습니다.");
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[오류] 360도 회전 탐색 실패: {ex.Message}");
+            }
+            finally
+            {
+                StopScanControl();
+                RefreshCommandStatesIfNeeded();
+            }
+        }
+        private double GetYawDelta(double previousYaw, double currentYaw)
+        {
+            double delta = currentYaw - previousYaw;
+
+            if (delta > 180)
+                delta -= 360;
+            else if (delta < -180)
+                delta += 360;
+
+            return delta;
         }
 
         // 탐색에 사용한 조이스틱 입력과 수동 제어 송신을 정리한다.
@@ -457,6 +473,9 @@ namespace GCS_Project.ViewModels
 
             (StrikeCommand as RelayCommand)?.NotifyCanExecuteChanged();
             (StopStrikeCommand as RelayCommand)?.NotifyCanExecuteChanged();
+
+            (Scan360Command as RelayCommand)?.NotifyCanExecuteChanged();
+            (StopScanCommand as RelayCommand)?.NotifyCanExecuteChanged();
 
             Application.Current.Dispatcher.Invoke(() =>
             {

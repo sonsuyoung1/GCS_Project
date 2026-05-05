@@ -86,14 +86,14 @@
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="360"/>
+            <ColumnDefinition Width="500"/>
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="330"/>
         </Grid.ColumnDefinitions>
 
         <Grid Grid.Column="0" Margin="10">
             <Grid.RowDefinitions>
-                <RowDefinition Height="300"/>
+                <RowDefinition Height="500"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
@@ -344,7 +344,6 @@
                         Width="25" Height="25" Background="#34495E" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
                         </StackPanel>
                     </StackPanel>
-
                 </UniformGrid>
             </Border>
         </Grid>
@@ -371,7 +370,8 @@
                     <Button Content="Arm" Command="{Binding ArmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="Disarm" Command="{Binding DisarmCommand}" Background="#27AE60" Style="{StaticResource GcsButton}"/>
                     <Button Content="PX4 Connect" Command="{Binding ConnectPx4MavlinkCommand}" Background="#4A5568" Style="{StaticResource GcsButton}"/>
-
+                    <Button Content="360 SCAN" Command="{Binding Scan360Command}" Background="#4A5568" Style="{StaticResource GcsButton}"/>
+                    <Button Content="SCAN STOP" Command="{Binding StopScanCommand}" Background="#4A5568" Style="{StaticResource GcsButton}"/>
                     <ToggleButton x:Name="ManualModeToggle" 
                                           Content="Manual Mode" 
                                           Style="{StaticResource GcsToggleButton}"
