@@ -26,7 +26,6 @@ namespace GCS_Project
 
 
         #region [종료 처리]
-
         // 창이 닫힐 때 타이머, 오버레이, ViewModel, 영상 리소스를 정리한다.
         protected override void OnClosed(EventArgs e)
         {

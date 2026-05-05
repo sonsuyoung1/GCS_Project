@@ -26,7 +26,7 @@ namespace GCS_Project.Services
 
         public YoloMetaUdpService(
             int listenPort = 5001,
-            string rosCommandIp = "192.168.0.62",
+            string rosCommandIp = "192.168.0.61",
             int rosCommandPort = 5006)
         {
             _listenPort = listenPort;

@@ -239,6 +239,17 @@ namespace GCS_Project.ViewModels
         public bool IsStopStrikeEnabled =>
             IsStriking &&
             Drone.IsConnected;
+
+        public bool IsScanEnabled =>
+            Drone.IsConnected &&
+            Drone.IsArmed &&
+            !_isScanning &&
+            (FlightMode == MODE_TAKEOFF || FlightMode == MODE_HOLD || FlightMode == MODE_MANUAL);
+
+        public bool IsStopScanEnabled =>
+            Drone.IsConnected &&
+            Drone.IsArmed &&
+            _isScanning;
         #endregion
 
 
@@ -265,6 +276,9 @@ namespace GCS_Project.ViewModels
 
         public ICommand StrikeCommand { get; private set; } = null!;
         public ICommand StopStrikeCommand { get; private set; } = null!;
+
+        public ICommand Scan360Command { get; private set; } = null!;
+        public ICommand StopScanCommand { get; private set; } = null!;
 
         #endregion
 
@@ -333,7 +347,8 @@ namespace GCS_Project.ViewModels
             ShowHistoryCommand = new RelayCommand(async () => await ExecuteShowHistory());
             ConnectPx4MavlinkCommand = new RelayCommand(async () => await ExecuteConnectPx4Mavlink());
 
-
+            Scan360Command = new RelayCommand(async () => await ExecuteScan360(), () => IsScanEnabled);
+            StopScanCommand = new RelayCommand(ExecuteStopScan, () => IsStopScanEnabled);
             InitializeAltitudeCommands();
             InitializeSpeedCommands();
         }

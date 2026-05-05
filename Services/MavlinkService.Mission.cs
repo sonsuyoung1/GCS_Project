@@ -30,6 +30,10 @@ namespace GCS_Project.Services
             _ = Task.Run(async () => await RunMissionLoop(waypointCount));
         }
 
+        private static uint Px4CustomMode(uint mainMode, uint subMode = 0)
+        {
+            return (mainMode << 16) | (subMode << 24);
+        }
         // 현재 진행 중인 미션을 중단하고 현재 위치에서 정지하도록 명령한다.
         public async Task StopMission()
         {
@@ -42,13 +46,15 @@ namespace GCS_Project.Services
 
             try
             {
-                await GoTo(
-                    CurrentState.Latitude,
-                    CurrentState.Longitude,
-                    (float)CurrentState.Altitude
+                // PX4 AUTO HOLD / LOITER
+                uint holdMode = Px4CustomMode(4, 3);
+
+                await SetFlightMode(
+                    MavModeFlag.MavModeFlagCustomModeEnabled,
+                    holdMode
                 );
 
-                OnLogReceived?.Invoke("[명령] 제자리 정지(Hovering) 명령 전송 완료");
+                OnLogReceived?.Invoke("[명령] 미션 중단 - HOLD/LOITER 모드 전환 요청");
             }
             catch (Exception ex)
             {
@@ -77,7 +83,6 @@ namespace GCS_Project.Services
 
 
         #region [2. 미션 루프]
-
         // 미션 루프를 실행하며 웨이포인트를 순서대로 방문한다.
         private async Task RunMissionLoop(int initialWaypointCount)
         {
@@ -197,12 +202,10 @@ namespace GCS_Project.Services
                 OnLogReceived?.Invoke("[미션] 사용자에 의해 임무가 중단되었습니다.");
             }
         }
-
         #endregion
 
 
         #region [3. 이동 명령]
-
         // 지정한 GPS 좌표와 고도로 이동하는 GoTo 명령을 전송한다.
         public async Task GoTo(double lat, double lng, float alt)
         {
