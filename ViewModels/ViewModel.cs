@@ -305,7 +305,7 @@ namespace GCS_Project.ViewModels
             _mavlinkService = new MavlinkService();
             _yoloMetaUdpService = new YoloMetaUdpService(
                 listenPort: 5001,
-                rosCommandIp: "192.168.0.61",
+                rosCommandIp: "192.168.0.148",
                 rosCommandPort: 5006
             );
 
