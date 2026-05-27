@@ -77,7 +77,7 @@ namespace GCS_Project.ViewModels
 
             try
             {
-                await _mavlinkService.StartAsync("0.0.0.0", 14550, "192.168.0.61", 14551);
+                await _mavlinkService.StartAsync("0.0.0.0", 14550, "192.168.0.148", 14551);
                 AppendLog("[시스템] MAVLink 연결 성공");
 
                 await _yoloMetaUdpService.StartAsync();
@@ -139,6 +139,14 @@ namespace GCS_Project.ViewModels
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
                     ApplyDetectedTargets(targets);
+                });
+            };
+
+            _yoloMetaUdpService.OnLogReceived += (message) =>
+            {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    AppendLog(message);
                 });
             };
         }
