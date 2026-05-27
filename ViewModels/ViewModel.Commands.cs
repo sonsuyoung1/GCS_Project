@@ -342,93 +342,60 @@ namespace GCS_Project.ViewModels
 
         #region [5. 탐색 명령]
 
-        // 진행 중인 회전 탐색을 중지한다.
+        // 360도 스캔 정지 명령을 Ubuntu ROS2 쪽으로 전송한다.
         private void ExecuteStopScan()
         {
             try
             {
                 if (!_isScanning)
                 {
-                    AppendLog("[시스템] 현재 360도 탐색 중이 아닙니다.");
+                    AppendLog("[시스템] 현재 360도 스캔 중이 아닙니다.");
                     return;
                 }
 
-                _scanCts?.Cancel();
-                StopScanControl();
+                _yoloMetaUdpService.SendStopScan();
 
-                RefreshCommandStatesIfNeeded();
+                _isScanning = false;
 
-                AppendLog("[시스템] 360도 탐색을 중지합니다.");
+                AppendLog("[GCS-CMD] 360도 스캔 정지 명령 전송");
+                AppendLog("[시스템] ROS2 scan_node에 360도 스캔 정지를 요청했습니다.");
             }
             catch (Exception ex)
             {
-                AppendLog($"[오류] 360도 탐색 중지 실패: {ex.Message}");
+                AppendLog($"[오류] 360도 스캔 정지 실패: {ex.Message}");
             }
         }
 
-        private async Task ExecuteScan360()
+        // 360도 스캔 시작 명령을 Ubuntu ROS2 쪽으로 전송한다.
+        private async Task ExecuteScan()
         {
             try
             {
                 if (_isScanning)
                 {
-                    AppendLog("[시스템] 이미 360도 탐색 중입니다.");
+                    AppendLog("[시스템] 이미 360도 스캔 중입니다.");
                     return;
                 }
 
-                if (!Drone.IsArmed || !Drone.IsConnected)
+                if (!Drone.IsArmed)
                 {
-                    AppendLog("[시스템] 드론 연결 및 시동 후 360도 탐색이 가능합니다.");
+                    AppendLog("[시스템] 시동 후에만 360도 스캔을 시작할 수 있습니다.");
                     return;
                 }
-
-                _scanCts?.Cancel();
-                _scanCts = new CancellationTokenSource();
-                CancellationToken token = _scanCts.Token;
 
                 _isScanning = true;
-                RefreshCommandStatesIfNeeded();
 
-                double startYaw = Drone.Yaw;
-                double accumulatedYaw = 0;
-                double previousYaw = startYaw;
+                _yoloMetaUdpService.SendStartScan();
 
-                AppendLog($"[시스템] 360도 회전 탐색 시작. 시작 Yaw: {startYaw:F1}°");
+                AppendLog("[GCS-CMD] 360도 스캔 시작 명령 전송");
+                AppendLog("[시스템] ROS2 scan_node에 360도 스캔 시작을 요청했습니다.");
 
-                _mavlinkService.StartManualControl();
-
-                short yawSpeed = 250;
-
-                while (accumulatedYaw < 360.0 && !token.IsCancellationRequested)
-                {
-                    _mavlinkService.SetJoystick(0, 0, 500, yawSpeed);
-
-                    await Task.Delay(100, token);
-
-                    double currentYaw = Drone.Yaw;
-                    double delta = GetYawDelta(previousYaw, currentYaw);
-
-                    accumulatedYaw += Math.Abs(delta);
-                    previousYaw = currentYaw;
-                }
-
-                if (!token.IsCancellationRequested)
-                {
-                    AppendLog("[시스템] 360도 회전 탐색 완료");
-                }
-            }
-            catch (TaskCanceledException)
-            {
-                AppendLog("[시스템] 360도 회전 탐색이 중지되었습니다.");
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
-                AppendLog($"[오류] 360도 회전 탐색 실패: {ex.Message}");
-            }
-            finally
-            {
-                StopScanControl();
-                RefreshCommandStatesIfNeeded();
+                _isScanning = false;
+                AppendLog($"[오류] 360도 스캔 시작 실패: {ex.Message}");
             }
         }
         private double GetYawDelta(double previousYaw, double currentYaw)
@@ -441,14 +408,6 @@ namespace GCS_Project.ViewModels
                 delta += 360;
 
             return delta;
-        }
-
-        // 탐색에 사용한 조이스틱 입력과 수동 제어 송신을 정리한다.
-        private void StopScanControl()
-        {
-            _mavlinkService.SetJoystick(0, 0, 500, 0);
-            _mavlinkService.StopManualControl();
-            _isScanning = false;
         }
 
         #endregion

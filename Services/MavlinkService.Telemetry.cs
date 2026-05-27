@@ -29,7 +29,6 @@ namespace GCS_Project.Services
             SubscribeLocalPosition();
             StartUiUpdateTimer();
         }
-
         #endregion
 
 
@@ -384,7 +383,7 @@ namespace GCS_Project.Services
 
             lock (_telemetryRawLock)
             {
-                if (ageMs > 3000 && _rawIsConnected)
+                if (ageMs > 10000 && _rawIsConnected)
                 {
                     _rawIsConnected = false;
                     shouldNotify = true;

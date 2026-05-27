@@ -26,7 +26,7 @@ namespace GCS_Project.Services
 
         public YoloMetaUdpService(
             int listenPort = 5001,
-            string rosCommandIp = "192.168.0.61",
+            string rosCommandIp = "192.168.0.148",
             int rosCommandPort = 5006)
         {
             _listenPort = listenPort;
@@ -211,9 +211,36 @@ namespace GCS_Project.Services
             SendCommandJson(msg);
         }
 
+        // 360도 스캔 시작 명령을 Ubuntu ROS2 쪽으로 전송한다.
+        public void SendStartScan()
+        {
+            var msg = new
+            {
+                type = "start_scan",
+                value = true
+            };
+
+            SendCommandJson(msg);
+        }
+
+        // 360도 스캔 정지 명령을 Ubuntu ROS2 쪽으로 전송한다.
+        public void SendStopScan()
+        {
+            var msg = new
+            {
+                type = "start_scan",
+                value = false
+            };
+
+            SendCommandJson(msg);
+        }
+
         // Guidance 시작 명령을 Ubuntu ROS2 쪽으로 전송한다.
         public void SendStartGuidance()
         {
+            // 타격 시작 전에 스캔 정지
+            SendStopScan();
+
             var msg = new
             {
                 type = "start_guidance",
@@ -234,6 +261,7 @@ namespace GCS_Project.Services
 
             SendCommandJson(msg);
         }
+
 
         // JSON 명령을 UDP로 Ubuntu에 전송한다.
         private void SendCommandJson(object msg)

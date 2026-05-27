@@ -347,7 +347,7 @@ namespace GCS_Project.ViewModels
             ShowHistoryCommand = new RelayCommand(async () => await ExecuteShowHistory());
             ConnectPx4MavlinkCommand = new RelayCommand(async () => await ExecuteConnectPx4Mavlink());
 
-            Scan360Command = new RelayCommand(async () => await ExecuteScan360(), () => IsScanEnabled);
+            Scan360Command = new RelayCommand(async () => await ExecuteScan(), () => IsScanEnabled);
             StopScanCommand = new RelayCommand(ExecuteStopScan, () => IsStopScanEnabled);
             InitializeAltitudeCommands();
             InitializeSpeedCommands();
