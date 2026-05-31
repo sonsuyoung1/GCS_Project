@@ -31,13 +31,20 @@ namespace GCS_Project.Services
         #region [2. 비행 모드 명령]
 
         // 드론의 PX4 비행 모드를 변경한다.
-        public async Task SetFlightMode(MavModeFlag baseMode, uint customMode)
+        public async Task SetFlightMode(
+            MavModeFlag baseMode,
+            uint customMainMode,
+            uint customSubMode = 0)
         {
             var commandClient = GetCommandClient("[경고] 기체가 연결되지 않아 모드를 변경할 수 없습니다.");
             if (commandClient == null) return;
 
             try
             {
+                uint customMode =
+                    (customMainMode << 16) |
+                    (customSubMode << 24);
+
                 await commandClient.SendCommandLong(
                     MavCmd.MavCmdDoSetMode,
                     (float)baseMode,
@@ -46,13 +53,59 @@ namespace GCS_Project.Services
                     _cts?.Token ?? CancellationToken.None
                 );
 
-                OnLogReceived?.Invoke($"[명령] 비행 모드 변경 요청 전송 (커스텀 코드: {customMode})");
+                OnLogReceived?.Invoke(
+                    $"[명령] 비행 모드 변경 요청 전송 " +
+                    $"(main={customMainMode}, sub={customSubMode}, customMode={customMode})"
+                );
             }
             catch (Exception ex)
             {
                 OnLogReceived?.Invoke($"[오류] 모드 변경 실패: {ex.Message}");
             }
         }
+
+        // PX4 HOLD 모드로 전환한다.
+        // PX4 HOLD / AUTO.LOITER 모드로 전환한다.
+        public async Task SetHoldModeAsync()
+        {
+            if (_router == null)
+            {
+                OnLogReceived?.Invoke("[경고] MAVLink 라우터가 없어 HOLD 모드로 변경할 수 없습니다.");
+                return;
+            }
+
+            try
+            {
+                // PX4 custom mode:
+                // main mode 4 = AUTO
+                // sub mode 3 = LOITER/HOLD
+                uint customMode = (4u << 16) | (3u << 24);
+
+                var pkt = new SetModePacket
+                {
+                    SystemId = 255,
+                    ComponentId = 190
+                };
+
+                pkt.Payload.TargetSystem = 1;
+                pkt.Payload.BaseMode = (Asv.Mavlink.Common.MavMode)1;
+                pkt.Payload.CustomMode = customMode;
+
+                await _router.Send(
+                    pkt,
+                    _cts?.Token ?? CancellationToken.None
+                );
+
+                OnLogReceived?.Invoke(
+                    $"[PX4] SET_MODE HOLD/LOITER 전송 완료 (customMode={customMode})"
+                );
+            }
+            catch (Exception ex)
+            {
+                OnLogReceived?.Invoke($"[오류] HOLD/LOITER 모드 전환 실패: {ex.Message}");
+            }
+        }
+
 
         // 기체를 현재 위치에서 일시 정지 또는 제자리 유지 상태로 전환한다.
         public async Task Hold()
