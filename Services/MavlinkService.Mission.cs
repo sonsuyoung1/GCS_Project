@@ -34,31 +34,32 @@ namespace GCS_Project.Services
         {
             return (mainMode << 16) | (subMode << 24);
         }
-        // 현재 진행 중인 미션을 중단하고 현재 위치에서 정지하도록 명령한다.
+
+
         public async Task StopMission()
         {
-            if (!_isMissionRunning) return;
-
             _isMissionRunning = false;
             OnLogReceived?.Invoke("[미션] 임무 중단 요청");
 
-            if (!CurrentState.IsConnected) return;
+            if (!CurrentState.IsConnected)
+            {
+                OnLogReceived?.Invoke("[경고] 기체 연결이 없어 미션 정지 명령을 보낼 수 없습니다.");
+                return;
+            }
 
             try
             {
-                // PX4 AUTO HOLD / LOITER
-                uint holdMode = Px4CustomMode(4, 3);
+                await SetHoldModeAsync();
 
-                await SetFlightMode(
-                    MavModeFlag.MavModeFlagCustomModeEnabled,
-                    holdMode
-                );
-
-                OnLogReceived?.Invoke("[명령] 미션 중단 - HOLD/LOITER 모드 전환 요청");
+                OnLogReceived?.Invoke("[명령] 미션 중단 - HOLD/LOITER 모드 전환 요청 완료");
+            }
+            catch (TaskCanceledException)
+            {
+                OnLogReceived?.Invoke("[경고] 미션 중단 명령이 취소되었습니다.");
             }
             catch (Exception ex)
             {
-                OnLogReceived?.Invoke($"[오류] 정지 명령 실패: {ex.Message}");
+                OnLogReceived?.Invoke($"[오류] 미션 중단 실패: {ex.Message}");
             }
         }
 
@@ -105,14 +106,27 @@ namespace GCS_Project.Services
                     if (nextPoint == null)
                         break;
 
+                    if (!_isMissionRunning)
+                        break;
+
                     currentDestination = await SendGoToIfDestinationChanged(
                         currentDestination,
                         nextPoint
                     );
 
+                    if (!_isMissionRunning)
+                        break;
+
                     RemoveWaypointIfReached(nextPoint);
 
-                    await Task.Delay(1000, _cts?.Token ?? CancellationToken.None);
+                    // 1초 동안 그냥 기다리지 말고 100ms 단위로 쪼개서 Stop 반응성 개선
+                    for (int i = 0; i < 10; i++)
+                    {
+                        if (!_isMissionRunning)
+                            break;
+
+                        await Task.Delay(100, _cts?.Token ?? CancellationToken.None);
+                    }
                 }
 
                 NotifyMissionFinished();

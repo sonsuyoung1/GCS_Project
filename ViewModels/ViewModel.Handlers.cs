@@ -154,6 +154,9 @@ namespace GCS_Project.ViewModels
         // PX4에서 받은 실제 비행 모드를 ViewModel의 FlightMode로 변환한다.
         private void ApplyFlightModeFromPx4(string newMode)
         {
+            // PX4에서 실제로 들어온 모드 문자열 저장
+            _currentPx4Mode = newMode;
+
             // 시동이 꺼져 있으면 PX4 모드가 HOLD/POSCTL이어도 GCS에서는 대기 상태로 표시한다.
             if (!Drone.IsArmed)
             {
@@ -558,6 +561,12 @@ namespace GCS_Project.ViewModels
         {
             try
             {
+                // 수동 조종 진입 전에 ROS2 Offboard 제어 중지
+                _yoloMetaUdpService.SendStopScan();
+                _yoloMetaUdpService.SendStopTracking();
+
+                await Task.Delay(200);
+
                 await _mavlinkService.SetFlightMode(
                     MavModeFlag.MavModeFlagCustomModeEnabled,
                     3
@@ -580,13 +589,42 @@ namespace GCS_Project.ViewModels
         {
             try
             {
+                // 1. 조이스틱 중립값 유지
                 _mavlinkService.SetJoystick(0, 0, 500, 0);
-                await Task.Delay(200);
 
+                // 2. HOLD 모드 전송
+                await _mavlinkService.SetHoldModeAsync();
+
+                // 3. PX4가 실제 HOLD로 바뀔 때까지 대기
+                bool holdConfirmed = false;
+
+                int retries = 50; // 50 * 100ms = 최대 5초
+                for (int i = 0; i < retries; i++)
+                {
+                    await Task.Delay(100);
+
+                    if (_currentPx4Mode == "HOLD")
+                    {
+                        holdConfirmed = true;
+                        break;
+                    }
+
+                    // 대기하는 동안 중립 수동 입력 계속 유지
+                    _mavlinkService.SetJoystick(0, 0, 500, 0);
+                }
+
+                if (!holdConfirmed)
+                {
+                    AppendLog($"[경고] PX4가 HOLD로 전환되지 않았습니다. 현재 PX4 모드: {_currentPx4Mode}");
+                    AppendLog("[경고] 안전을 위해 중립 수동 입력을 계속 유지합니다.");
+                    return;
+                }
+
+                // 4. 진짜 HOLD 확인 후 수동 조종 패킷 송신 중지
                 _mavlinkService.StopManualControl();
 
                 FlightMode = MODE_HOLD;
-                AppendLog("[시스템] 수동 조종 모드 종료 - 제자리 유지");
+                AppendLog("[시스템] 수동 조종 모드 종료 - PX4 HOLD 모드 전환 확인 후 종료");
             }
             catch (Exception ex)
             {

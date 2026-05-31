@@ -36,6 +36,7 @@ namespace GCS_Project.ViewModels
 
         #region [3. 화면 표시 상태]
         private string _flightMode = MODE_IDLE;
+        private string _currentPx4Mode = "IDLE";
         private string _chatLog = "드론 연결 대기 중...";
         private readonly StringBuilder _chatLogBuffer = new StringBuilder("드론 연결 대기 중...");
 
@@ -136,10 +137,26 @@ namespace GCS_Project.ViewModels
 
                     // 선택된 타겟 ID를 지도에 알림
                     TargetSelectionChanged?.Invoke(value?.ID);
+
                     if (value != null)
                     {
                         _yoloMetaUdpService.SendTargetId(value.ID);
-                        AppendLog($"[GUIDANCE] 선택 타겟 ID 전송: {value.ID}");
+                        AppendLog($"[TRACKING] 선택 타겟 ID 전송: {value.ID}");
+
+                        if (FlightMode != MODE_MANUAL)
+                        {
+                            _yoloMetaUdpService.SendStartTracking();
+                            AppendLog("[TRACKING] 선택 타겟 헤딩 추적 시작 명령 전송");
+                        }
+                        else
+                        {
+                            AppendLog("[TRACKING] 수동 조종 중이므로 헤딩 추적은 시작하지 않습니다.");
+                        }
+                    }
+                    else
+                    {
+                        _yoloMetaUdpService.SendStopTracking();
+                        AppendLog("[TRACKING] 선택 타겟 해제 - 헤딩 추적 정지 명령 전송");
                     }
                 }
             }

@@ -203,7 +203,7 @@ namespace GCS_Project.ViewModels
             return EarthRadiusMeters * c;
         }
 
-        // 선택된 타겟 ID와 Guidance 시작 명령을 Ubuntu ROS2 쪽으로 전송한다.
+        // 선택된 타겟 ID와 실제 타격 유도 시작 명령을 Ubuntu ROS2 쪽으로 전송한다.
         private async void ExecuteStrike()
         {
             if (SelectedTarget == null) return;
@@ -220,9 +220,9 @@ namespace GCS_Project.ViewModels
             // 타격 대상으로 선택된 타겟을 DB에 기록
             SaveTargetLogAsync(targetToStrike, isStriked: true);
 
-            // Guidance 시작 명령 전송
-            _yoloMetaUdpService.SendStartGuidance();
-            AppendLog("[GCS-CMD] Guidance 시작 명령 전송");
+            // 실제 타격 유도 시작 명령 전송
+            _yoloMetaUdpService.SendStartStrikeGuidance();
+            AppendLog("[GCS-CMD] 타격 Guidance 시작 명령 전송");
 
             AppendLog($"[작전] 타겟(ID:{targetToStrike.ID})으로 타격 가이던스를 시작합니다.");
 
@@ -235,7 +235,7 @@ namespace GCS_Project.ViewModels
             if (!IsStriking) return;
 
             // Guidance 중지 명령 전송
-            _yoloMetaUdpService.SendStopGuidance();
+            _yoloMetaUdpService.SendStopStrikeGuidance();
             AppendLog("[GCS-CMD] Guidance 중지 명령 전송");
 
             IsStriking = false;

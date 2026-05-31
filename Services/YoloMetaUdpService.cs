@@ -235,27 +235,55 @@ namespace GCS_Project.Services
             SendCommandJson(msg);
         }
 
-        // Guidance 시작 명령을 Ubuntu ROS2 쪽으로 전송한다.
-        public void SendStartGuidance()
+        // 선택 객체를 화면 중앙에 유지하기 위한 헤딩 추적 시작 명령
+        public void SendStartTracking()
         {
-            // 타격 시작 전에 스캔 정지
+            // 추적 시작 전에 360 scan 정지
             SendStopScan();
 
             var msg = new
             {
-                type = "start_guidance",
+                type = "start_tracking",
                 value = true
             };
 
             SendCommandJson(msg);
         }
 
-        // Guidance 중지 명령을 Ubuntu ROS2 쪽으로 전송한다.
-        public void SendStopGuidance()
+        // 선택 객체 헤딩 추적 정지 명령
+        public void SendStopTracking()
         {
             var msg = new
             {
-                type = "start_guidance",
+                type = "start_tracking",
+                value = false
+            };
+
+            SendCommandJson(msg);
+        }
+
+        // 실제 타격 유도 시작 명령
+        public void SendStartStrikeGuidance()
+        {
+            // 타격 시작 전에 scan/tracking 정지
+            SendStopScan();
+            SendStopTracking();
+
+            var msg = new
+            {
+                type = "start_strike_guidance",
+                value = true
+            };
+
+            SendCommandJson(msg);
+        }
+
+        // 실제 타격 유도 중지 명령
+        public void SendStopStrikeGuidance()
+        {
+            var msg = new
+            {
+                type = "start_strike_guidance",
                 value = false
             };
 
