@@ -55,10 +55,19 @@ namespace GCS_Project.Services
 
                     _lastHeartbeatUtc = now;
 
+                    bool wasDisconnected = false;
+
                     lock (_telemetryRawLock)
                     {
+                        wasDisconnected = !_rawIsConnected;
+
                         _rawIsConnected = true;
                         _rawIsArmed = isArmed;
+                    }
+
+                    if (wasDisconnected)
+                    {
+                        OnLogReceived?.Invoke("[MAV] Heartbeat 재수신 - 연결 복구됨");
                     }
 
                     UpdateFlightModeFromHeartbeat(packet?.CustomMode ?? 0);
@@ -386,12 +395,14 @@ namespace GCS_Project.Services
                 if (ageMs > 10000 && _rawIsConnected)
                 {
                     _rawIsConnected = false;
+                    _rawIsArmed = false;
                     shouldNotify = true;
                 }
             }
 
             if (shouldNotify)
             {
+                PublishState();
                 OnLogReceived?.Invoke("[비상] 기체와의 통신이 끊겼습니다. (Heartbeat Timeout)");
             }
         }
