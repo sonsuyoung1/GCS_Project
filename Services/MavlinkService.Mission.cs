@@ -30,12 +30,7 @@ namespace GCS_Project.Services
             _ = Task.Run(async () => await RunMissionLoop(waypointCount));
         }
 
-        private static uint Px4CustomMode(uint mainMode, uint subMode = 0)
-        {
-            return (mainMode << 16) | (subMode << 24);
-        }
-
-
+        // 미션을 실행하다 그 자리에 바로 스탑
         public async Task StopMission()
         {
             _isMissionRunning = false;
@@ -49,9 +44,10 @@ namespace GCS_Project.Services
 
             try
             {
-                await SetHoldModeAsync();
+                // PX4에 진행 중인 이동을 즉시 Pause 요청
+                await Hold();
 
-                OnLogReceived?.Invoke("[명령] 미션 중단 - HOLD/LOITER 모드 전환 요청 완료");
+                OnLogReceived?.Invoke("[명령] 미션 중단 - 즉시 정지 명령 전송 완료");
             }
             catch (TaskCanceledException)
             {
@@ -106,6 +102,7 @@ namespace GCS_Project.Services
                     if (nextPoint == null)
                         break;
 
+                    // 만약에 HOLD 잘되면 이거 삭제하고 다시 실행
                     if (!_isMissionRunning)
                         break;
 
@@ -114,6 +111,7 @@ namespace GCS_Project.Services
                         nextPoint
                     );
 
+                    // 만약에 HOLD 잘되면 이거 삭제하고 다시 실행
                     if (!_isMissionRunning)
                         break;
 

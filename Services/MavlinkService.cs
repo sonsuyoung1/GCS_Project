@@ -184,8 +184,11 @@ namespace GCS_Project.Services
             {
                 builder.SetConfig(new ClientDeviceBrowserConfig
                 {
-                    DeviceTimeoutMs = 1000,
-                    DeviceCheckIntervalMs = 30_000
+                    // 1초는 너무 짧음. 네 watchdog 기준보다 길게 잡는 게 안전함.
+                    DeviceTimeoutMs = 30_000,
+
+                    // 장치 상태 확인 주기. 너무 길면 재감지가 느림.
+                    DeviceCheckIntervalMs = 1_000
                 });
 
                 builder.Factories.RegisterDefaultDevices(
