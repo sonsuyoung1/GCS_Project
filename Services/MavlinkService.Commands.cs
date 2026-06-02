@@ -32,30 +32,30 @@ namespace GCS_Project.Services
 
         // 드론의 PX4 비행 모드를 변경한다.
         public async Task SetFlightMode(
-            MavModeFlag baseMode,
-            uint customMainMode,
-            uint customSubMode = 0)
+                MavModeFlag baseMode,
+                uint customMainMode,
+                uint customSubMode = 0)
         {
             var commandClient = GetCommandClient("[경고] 기체가 연결되지 않아 모드를 변경할 수 없습니다.");
             if (commandClient == null) return;
 
             try
             {
-                uint customMode =
-                    (customMainMode << 16) |
-                    (customSubMode << 24);
-
                 await commandClient.SendCommandLong(
                     MavCmd.MavCmdDoSetMode,
                     (float)baseMode,
-                    customMode,
-                    0f, 0f, 0f, 0f, 0f,
+                    customMainMode,   // param2: PX4 main mode
+                    customSubMode,    // param3: PX4 sub mode
+                    0f,
+                    0f,
+                    0f,
+                    0f,
                     _cts?.Token ?? CancellationToken.None
                 );
 
                 OnLogReceived?.Invoke(
                     $"[명령] 비행 모드 변경 요청 전송 " +
-                    $"(main={customMainMode}, sub={customSubMode}, customMode={customMode})"
+                    $"(baseMode={baseMode}, main={customMainMode}, sub={customSubMode})"
                 );
             }
             catch (Exception ex)
@@ -115,7 +115,7 @@ namespace GCS_Project.Services
 
             try
             {
-                await commandClient.SendCommandInt(
+                /*await commandClient.SendCommandInt(
                     MavCmd.MavCmdDoPauseContinue,
                     MavFrame.MavFrameGlobalRelativeAltInt,
                     false,
@@ -125,10 +125,10 @@ namespace GCS_Project.Services
                     0, 0,
                     0f,
                     _cts?.Token ?? CancellationToken.None
-                );
-                
+                );*/
+
                 // 위에 거 안되면 이걸로 실행해봐야됨
-                /*await commandClient.SendCommandLong(
+                await commandClient.SendCommandLong(
                     MavCmd.MavCmdDoPauseContinue,
                     0f,     // param1: 0 = pause, 1 = continue
                     0f,
@@ -138,7 +138,7 @@ namespace GCS_Project.Services
                     0f,
                     0f,
                     _cts?.Token ?? CancellationToken.None
-                );*/
+                );
 
                 OnLogReceived?.Invoke("[시스템] 기체 정지(Hold) 명령을 전송했습니다.");
             }

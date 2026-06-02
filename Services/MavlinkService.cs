@@ -327,7 +327,6 @@ namespace GCS_Project.Services
             bool IsConnected,
             bool IsArmed
         );
-
         #endregion
 
 
