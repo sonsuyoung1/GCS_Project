@@ -44,10 +44,13 @@ namespace GCS_Project.Services
 
             try
             {
-                // PX4에 진행 중인 이동을 즉시 Pause 요청
-                await Hold();
+                await SetFlightMode(
+                    MavModeFlag.MavModeFlagCustomModeEnabled,
+                    4,
+                    3
+                );
 
-                OnLogReceived?.Invoke("[명령] 미션 중단 - 즉시 정지 명령 전송 완료");
+                OnLogReceived?.Invoke("[명령] 미션 중단 - AUTO HOLD/LOITER 전환 요청");
             }
             catch (TaskCanceledException)
             {
