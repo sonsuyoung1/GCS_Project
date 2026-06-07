@@ -44,13 +44,38 @@ namespace GCS_Project.Services
 
             try
             {
-                await SetFlightMode(
-                    MavModeFlag.MavModeFlagCustomModeEnabled,
-                    4,
-                    3
-                );
+                // 1. 제일 먼저 PX4 HOLD/LOITER로 전환
+                // 새 위치 목표를 만들지 않기 때문에 뒤로 도는 현상이 줄어듦
+                await SetHoldModeAsync();
+                OnLogReceived?.Invoke("[명령] 미션 중단 - HOLD/LOITER 우선 전환 요청");
 
-                OnLogReceived?.Invoke("[명령] 미션 중단 - AUTO HOLD/LOITER 전환 요청");
+                // 2. PX4가 모드 전환할 시간을 조금 줌
+                await Task.Delay(500, _cts?.Token ?? CancellationToken.None);
+
+                // 3. 혹시 속도가 계속 남아 있으면 fallback으로만 현재 위치 GoTo 사용
+                // 평소에는 이 부분이 실행되지 않는 게 가장 좋음
+                if (CurrentState.Speed > 0.5)
+                {
+                    double lat = CurrentState.Latitude;
+                    double lng = CurrentState.Longitude;
+                    float alt = (float)CurrentState.Altitude;
+
+                    if (lat != 0 && lng != 0)
+                    {
+                        if (alt <= 0.5f)
+                        {
+                            alt = (float)CurrentState.TargetAltitude;
+                        }
+
+                        await GoTo(lat, lng, alt);
+
+                        OnLogReceived?.Invoke(
+                            $"[보조정지] 속도가 남아 있어 현재 위치 목표로 보정: {lat:F7}, {lng:F7}, alt={alt:F1}m"
+                        );
+                    }
+                }
+
+                OnLogReceived?.Invoke("[명령] 미션 중단 - 현재 위치 유지 요청 완료");
             }
             catch (TaskCanceledException)
             {
@@ -114,17 +139,13 @@ namespace GCS_Project.Services
                         nextPoint
                     );
 
-                    // 만약에 HOLD 잘되면 이거 삭제하고 다시 실행
-                    if (!_isMissionRunning)
-                        break;
-
-                    RemoveWaypointIfReached(nextPoint);
-
-                    // 1초 동안 그냥 기다리지 말고 100ms 단위로 쪼개서 Stop 반응성 개선
-                    for (int i = 0; i < 10; i++)
+                    while (_isMissionRunning)
                     {
-                        if (!_isMissionRunning)
+                        if (IsReached(nextPoint))
+                        {
+                            RemoveWaypointIfReached(nextPoint);
                             break;
+                        }
 
                         await Task.Delay(100, _cts?.Token ?? CancellationToken.None);
                     }

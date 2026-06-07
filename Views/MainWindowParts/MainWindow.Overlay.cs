@@ -1,5 +1,6 @@
 ﻿using GCS_Project.Models;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Windows;
@@ -10,6 +11,23 @@ namespace GCS_Project
 {
     public partial class MainWindow
     {
+        #region [오버레이 지연 표시 필드]
+
+        // 카메라 영상 지연에 맞추기 위해 BBox 표시만 약간 늦춘다.
+        private readonly Queue<OverlayTargetFrame> _overlayDelayQueue = new();
+
+        // 처음에는 200ms로 테스트하고, 화면 보면서 100~300ms 사이로 조절하면 됨
+        private readonly TimeSpan _overlayDelay = TimeSpan.FromMilliseconds(250);
+
+        private sealed class OverlayTargetFrame
+        {
+            public DateTime TimeUtc { get; init; }
+            public List<DetectedTarget> Targets { get; init; } = new();
+        }
+
+        #endregion
+
+
         #region [오버레이 초기화]
 
         // 영상 위에 YOLO 박스를 그릴 오버레이 창을 초기화한다.
@@ -37,12 +55,15 @@ namespace GCS_Project
             _overlayTimer.Tick += (s, e) =>
             {
                 if (_overlayWindow == null || _viewModel == null) return;
-                if (!_overlayDirty) return;
 
-                _overlayDirty = false;
+                // 현재 최신 타겟 상태를 복사해서 큐에 저장
+                EnqueueOverlayFrame();
 
+                // 영상 지연에 맞춰 지연된 BBox를 그림
                 UpdateOverlayBounds();
                 RedrawBboxes();
+
+                _overlayDirty = false;
             };
 
             _overlayTimer.Start();
@@ -185,6 +206,7 @@ namespace GCS_Project
         }
 
         // 프레임 좌표에 해당하는 타겟을 찾는다.
+        // 선택은 최신 ViewModel 데이터를 기준으로 처리한다.
         private DetectedTarget? FindTargetAtFramePoint(double fx, double fy)
         {
             if (_viewModel == null) return null;
@@ -293,9 +315,76 @@ namespace GCS_Project
         #endregion
 
 
+        #region [오버레이 지연 큐 처리]
+
+        // 현재 ViewModel의 타겟 상태를 복사해서 큐에 넣는다.
+        private void EnqueueOverlayFrame()
+        {
+            _overlayDelayQueue.Enqueue(new OverlayTargetFrame
+            {
+                TimeUtc = DateTime.UtcNow,
+                Targets = CloneTargetsForOverlay()
+            });
+
+            // 너무 많이 쌓이면 메모리 낭비라서 오래된 프레임 제거
+            while (_overlayDelayQueue.Count > 120)
+            {
+                _overlayDelayQueue.Dequeue();
+            }
+        }
+
+        // 설정한 지연 시간만큼 지난 타겟 프레임을 가져온다.
+        private List<DetectedTarget> GetDelayedOverlayTargets()
+        {
+            if (_overlayDelayQueue.Count == 0)
+                return CloneTargetsForOverlay();
+
+            DateTime readyTime = DateTime.UtcNow - _overlayDelay;
+
+            OverlayTargetFrame? latestReadyFrame = null;
+
+            while (_overlayDelayQueue.Count > 0 &&
+                   _overlayDelayQueue.Peek().TimeUtc <= readyTime)
+            {
+                latestReadyFrame = _overlayDelayQueue.Dequeue();
+            }
+
+            if (latestReadyFrame != null)
+                return latestReadyFrame.Targets;
+
+            // 아직 200ms 지난 프레임이 없으면 가장 오래된 프레임 사용
+            return _overlayDelayQueue.Peek().Targets;
+        }
+
+        // DetectedTarget은 계속 값이 바뀌므로 참조가 아니라 복사본을 저장해야 한다.
+        private List<DetectedTarget> CloneTargetsForOverlay()
+        {
+            if (_viewModel == null)
+                return new List<DetectedTarget>();
+
+            return _viewModel.DetectedTargets
+                .Select(t => new DetectedTarget
+                {
+                    ID = t.ID,
+                    TargetType = t.TargetType,
+                    Lat = t.Lat,
+                    Lng = t.Lng,
+                    Speed = t.Speed,
+                    Bx = t.Bx,
+                    By = t.By,
+                    Bw = t.Bw,
+                    Bh = t.Bh,
+                    IsBeingTracked = t.IsBeingTracked
+                })
+                .ToList();
+        }
+
+        #endregion
+
+
         #region [BBox 그리기]
 
-        // 현재 탐지 타겟 목록을 기준으로 영상 위에 BBox를 다시 그린다.
+        // 지연된 타겟 목록을 기준으로 영상 위에 BBox를 다시 그린다.
         private void RedrawBboxes()
         {
             if (_viewModel == null || _overlayWindow == null) return;
@@ -310,7 +399,9 @@ namespace GCS_Project
 
             ClearSelectedTargetIfMissing();
 
-            foreach (var target in _viewModel.DetectedTargets)
+            var delayedTargets = GetDelayedOverlayTargets();
+
+            foreach (var target in delayedTargets)
             {
                 DrawTargetBox(canvas, target, canvasW, canvasH);
             }
@@ -357,8 +448,8 @@ namespace GCS_Project
             if (rectWidth <= 1 || rectHeight <= 1) return;
 
             bool isSelected =
-                (_selectedTargetId.HasValue && target.ID == _selectedTargetId.Value) ||
-                (_viewModel?.SelectedTarget != null && target.ID == _viewModel.SelectedTarget.ID);
+                    (_selectedTargetId.HasValue && target.ID == _selectedTargetId.Value) ||
+                    (_viewModel?.SelectedTarget != null && target.ID == _viewModel.SelectedTarget.ID);
 
             DrawRectangle(canvas, rectLeft, rectTop, rectWidth, rectHeight, isSelected);
             DrawTargetLabel(canvas, target, rectLeft, rectTop);

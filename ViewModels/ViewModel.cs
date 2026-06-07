@@ -62,6 +62,7 @@ namespace GCS_Project.ViewModels
         #region [5. 타겟 및 타격 상태]
         private DetectedTarget? _selectedTarget;
         private bool _isStriking = false;
+        private bool _isUpdatingSelectedTargetFromYolo = false;
         private System.Timers.Timer? _targetLostTimer;
         private DateTime _lastTargetLogSaveTime = DateTime.MinValue;
         #endregion
@@ -135,11 +136,21 @@ namespace GCS_Project.ViewModels
                 {
                     RefreshCommandStatesIfNeeded();
 
-                    // 선택된 타겟 ID를 지도에 알림
-                    TargetSelectionChanged?.Invoke(value?.ID);
+                    if (_isUpdatingSelectedTargetFromYolo)
+                    {
+                        // Ubuntu에서 재탐지 ID를 알려줘서 GCS 화면만 갱신하는 경우
+                        // 여기서는 절대 다시 Ubuntu로 SendTargetId를 보내면 안 됨
+                        if (value != null)
+                        {
+                            AppendLog($"[TRACKING] 재탐지 선택 ID를 GCS 화면에 반영: {value.ID}");
+                        }
+
+                        return;
+                    }
 
                     if (value != null)
                     {
+                        // 선택한 객체 TYPE 전송
                         _yoloMetaUdpService.SendTargetId(value.ID);
                         AppendLog($"[TRACKING] 선택 타겟 ID 전송: {value.ID}");
 
@@ -155,6 +166,11 @@ namespace GCS_Project.ViewModels
                     }
                     else
                     {
+                        // 선택 해제 시 ROS2에도 선택 없음 상태를 알림
+                        _yoloMetaUdpService.SendClearTargetId();
+                        AppendLog("선택 타겟 해제");
+
+                        // 선택 타켓 해제 시 추적 정지 명령
                         _yoloMetaUdpService.SendStopTracking();
                         AppendLog("[TRACKING] 선택 타겟 해제 - 헤딩 추적 정지 명령 전송");
                     }
@@ -322,7 +338,7 @@ namespace GCS_Project.ViewModels
             _mavlinkService = new MavlinkService();
             _yoloMetaUdpService = new YoloMetaUdpService(
                 listenPort: 5001,
-                rosCommandIp: "192.168.0.148",
+                rosCommandIp: "192.168.0.61",
                 rosCommandPort: 5006
             );
 

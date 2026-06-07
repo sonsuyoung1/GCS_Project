@@ -26,6 +26,7 @@ namespace GCS_Project
         private bool _overlayDirty = false;
         private int? _selectedTargetId = null;
 
+
         private const double FRAME_WIDTH = 640.0;
         private const double FRAME_HEIGHT = 480.0;
 
@@ -35,7 +36,6 @@ namespace GCS_Project
         private short _joyYaw = 0;
 
         #endregion
-
 
         #region [2. 생성자]
         public MainWindow()
