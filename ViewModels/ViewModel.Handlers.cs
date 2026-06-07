@@ -149,6 +149,14 @@ namespace GCS_Project.ViewModels
                     AppendLog(message);
                 });
             };
+
+            _yoloMetaUdpService.OnSelectedTargetIdReceived += (selectedTargetId) =>
+            {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    UpdateSelectedTargetIdFromYolo(selectedTargetId);
+                });
+            };
         }
 
         // PX4에서 받은 실제 비행 모드를 ViewModel의 FlightMode로 변환한다.
@@ -455,6 +463,8 @@ namespace GCS_Project.ViewModels
                 if (existing != null)
                 {
                     existing.TargetType = incoming.TargetType;
+                    existing.Speed = incoming.Speed;
+                    existing.Distance = incoming.Distance;
                     existing.Lat = incoming.Lat;
                     existing.Lng = incoming.Lng;
                     existing.Bx = incoming.Bx;
@@ -536,6 +546,39 @@ namespace GCS_Project.ViewModels
                     target.TargetType,
                     isSelected
                 );
+            }
+        }
+
+        private void UpdateSelectedTargetIdFromYolo(int selectedTargetId)
+        {
+            // Ubuntu가 알려준 재탐지 후 선택 ID를
+            // GCS 화면 표시 상태에만 반영한다.
+            var matched = _detectedTargets.FirstOrDefault(t => t.ID == selectedTargetId);
+
+            if (matched == null)
+            {
+                AppendLog($"[TRACKING] 재탐지 ID 수신: {selectedTargetId}, 하지만 현재 GCS 타겟 목록에는 없음");
+                return;
+            }
+
+            _isUpdatingSelectedTargetFromYolo = true;
+
+            try
+            {
+                foreach (var target in _detectedTargets)
+                {
+                    target.IsBeingTracked = target.ID == selectedTargetId;
+                }
+
+                // 여기서 SelectedTarget을 바꾸긴 한다.
+                // 단, 플래그가 true라서 SendTargetId는 다시 안 나간다.
+                SelectedTarget = matched;
+
+                AppendLog($"[TRACKING] Ubuntu 재탐지 ID 반영 완료: {selectedTargetId}");
+            }
+            finally
+            {
+                _isUpdatingSelectedTargetFromYolo = false;
             }
         }
         #endregion

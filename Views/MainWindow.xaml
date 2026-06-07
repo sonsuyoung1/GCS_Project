@@ -125,12 +125,27 @@
                     <TextBlock Text="Detected Targets" Foreground="#3B82F6" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
 
                     <DataGrid Grid.Row="1" 
-                                      ItemsSource="{Binding DetectedTargets}" 
-                                      SelectedItem="{Binding SelectedTarget, Mode=TwoWay}" 
-                                      AutoGenerateColumns="False" IsReadOnly="True" 
-                                      Background="Transparent" Foreground="White" 
-                                      RowBackground="Transparent" GridLinesVisibility="None" 
-                                      SelectionMode="Single" BorderThickness="0">
+                          ItemsSource="{Binding DetectedTargets}" 
+                          SelectedItem="{Binding SelectedTarget, Mode=TwoWay}" 
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True" 
+                          Background="Transparent"
+                          Foreground="White" 
+                          RowBackground="Transparent"
+                          GridLinesVisibility="None" 
+                          SelectionMode="Single"
+                          BorderThickness="0">
+
+                        <DataGrid.Resources>
+                            <!-- 셀 안의 실제 텍스트 가운데 정렬 -->
+                            <Style x:Key="CenterCellTextStyle" TargetType="TextBlock">
+                                <Setter Property="HorizontalAlignment" Value="Center"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                <Setter Property="TextAlignment" Value="Center"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Style>
+                        </DataGrid.Resources>
+
                         <DataGrid.ColumnHeaderStyle>
                             <Style TargetType="DataGridColumnHeader">
                                 <Setter Property="Background" Value="#1A2233"/>
@@ -139,6 +154,7 @@
                                 <Setter Property="BorderBrush" Value="#34495E"/>
                                 <Setter Property="BorderThickness" Value="0,0,1,1"/>
                                 <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                <Setter Property="VerticalContentAlignment" Value="Center"/>
                                 <Setter Property="Height" Value="28"/>
                             </Style>
                         </DataGrid.ColumnHeaderStyle>
@@ -156,14 +172,30 @@
                                 <Setter Property="Foreground" Value="White"/>
                                 <Setter Property="BorderThickness" Value="0"/>
                                 <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                <Setter Property="VerticalContentAlignment" Value="Center"/>
                             </Style>
                         </DataGrid.CellStyle>
 
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="ID" Binding="{Binding ID}" Width="50"/>
-                            <DataGridTextColumn Header="TYPE" Binding="{Binding TargetType}" Width="*"/>
-                            <DataGridTextColumn Header="LAT" Binding="{Binding Lat, StringFormat={}{0:F5}}" Width="*"/>
-                            <DataGridTextColumn Header="LNG" Binding="{Binding Lng, StringFormat={}{0:F5}}" Width="*"/>
+                            <DataGridTextColumn Header="ID"
+                            Binding="{Binding ID}"
+                            Width="50"
+                            ElementStyle="{StaticResource CenterCellTextStyle}" />
+
+                            <DataGridTextColumn Header="TYPE"
+                            Binding="{Binding TargetType}"
+                            Width="*"
+                            ElementStyle="{StaticResource CenterCellTextStyle}" />
+
+                            <DataGridTextColumn Header="SPEED"
+                            Binding="{Binding SpeedText}"
+                            Width="*"
+                            ElementStyle="{StaticResource CenterCellTextStyle}" />
+
+                            <DataGridTextColumn Header="DISTANCE"
+                            Binding="{Binding DistanceText}"
+                            Width="*"
+                            ElementStyle="{StaticResource CenterCellTextStyle}" />
                         </DataGrid.Columns>
                     </DataGrid>
 

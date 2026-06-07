@@ -12,6 +12,8 @@ namespace GCS_Project.Models
     {
         private double _lat;
         private double _lng;
+        private double _speed;
+        private double _distance;
         private bool _isBeingTracked;
         private double _bx, _by, _bw, _bh;
 
@@ -28,6 +30,30 @@ namespace GCS_Project.Models
             get => _targetType;
             set { _targetType = value; OnPropertyChanged(); }
         }
+
+        public double Speed
+        {
+            get => _speed;
+            set
+            {
+                _speed = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(SpeedText));
+            }
+        }
+        public string SpeedText => $"{Speed:F2} m/s";
+
+        public double Distance
+        {
+            get => _distance;
+            set
+            {
+                _distance = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(DistanceText));
+            }
+        }
+        public string DistanceText => $"{Distance:F1} m";
 
         // 3. 위도 (실시간 갱신)
         public double Lat

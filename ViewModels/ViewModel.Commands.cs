@@ -213,7 +213,7 @@ namespace GCS_Project.ViewModels
 
             var targetToStrike = SelectedTarget;
 
-            // 선택 타겟 ID를 tracker 쪽으로 전송
+            // 선택 타겟 ID를 ROS2 쪽으로 전송
             _yoloMetaUdpService.SendTargetId(targetToStrike.ID);
             AppendLog($"[GCS-CMD] 선택 타겟 ID 전송: {targetToStrike.ID}");
 

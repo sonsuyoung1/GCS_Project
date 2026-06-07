@@ -20,14 +20,13 @@ namespace GCS_Project.Services
         private UdpClient? _commandUdpClient;
         private IPEndPoint? _rosCommandEndPoint;
         private CancellationTokenSource? _cts;
+        private int _lastReceivedSelectedTargetId = -1;
 
         public event Action<List<DetectedTarget>>? OnTargetsReceived;
         public event Action<string>? OnLogReceived;
+        public event Action<int>? OnSelectedTargetIdReceived;
 
-        public YoloMetaUdpService(
-            int listenPort = 5001,
-            string rosCommandIp = "192.168.0.148",
-            int rosCommandPort = 5006)
+        public YoloMetaUdpService(int listenPort, string rosCommandIp, int rosCommandPort)
         {
             _listenPort = listenPort;
             _rosCommandIp = rosCommandIp;
@@ -142,6 +141,20 @@ namespace GCS_Project.Services
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
+                // Ubuntu YOLO tracker가 보내는 현재 선택 타겟 ID 피드백 수신
+                // 재탐지로 ID가 바뀐 경우에만 GCS 화면에 알려준다.
+                if (root.TryGetProperty("selected_target_id", out JsonElement selectedIdElement))
+                {
+                    int selectedTargetId = selectedIdElement.GetInt32();
+
+                    if (selectedTargetId >= 0 &&
+                        selectedTargetId != _lastReceivedSelectedTargetId)
+                    {
+                        _lastReceivedSelectedTargetId = selectedTargetId;
+                        OnSelectedTargetIdReceived?.Invoke(selectedTargetId);
+                    }
+                }
+
                 if (!root.TryGetProperty("targets", out JsonElement targetsElement) ||
                     targetsElement.ValueKind != JsonValueKind.Array)
                 {
@@ -159,6 +172,14 @@ namespace GCS_Project.Services
                         TargetType = item.TryGetProperty("class", out var classEl)
                             ? classEl.GetString() ?? "Unknown"
                             : "Unknown",
+
+                        Speed = item.TryGetProperty("target_speed_est", out var speedEl)
+                            ? speedEl.GetDouble()
+                            : 0.0,
+
+                        Distance = item.TryGetProperty("target_distance", out var distanceEl)
+                            ? distanceEl.GetDouble()
+                            : 0.0,
 
                         Lat = item.TryGetProperty("lat", out var latEl)
                             ? latEl.GetDouble()
@@ -199,13 +220,24 @@ namespace GCS_Project.Services
             return list;
         }
 
-        // 선택된 타겟 ID를 Ubuntu ROS2 쪽으로 전송한다.
+        // 선택된 타겟 타입을 Ubuntu ROS2 쪽으로 전송한다.
         public void SendTargetId(int targetId)
         {
             var msg = new
             {
                 type = "select_target",
                 id = targetId
+            };
+
+            SendCommandJson(msg);
+        }
+
+        // 선택 취소 Ubuntu ROS2 쪽으로 전송한다.
+        public void SendClearTargetId()
+        {
+            var msg = new
+            {
+                type = "clear_target",
             };
 
             SendCommandJson(msg);

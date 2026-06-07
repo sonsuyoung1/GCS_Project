@@ -32,20 +32,24 @@ namespace GCS_Project.Services
 
         // 드론의 PX4 비행 모드를 변경한다.
         public async Task SetFlightMode(
-                MavModeFlag baseMode,
-                uint customMainMode,
-                uint customSubMode = 0)
+            MavModeFlag baseMode,
+            uint customMainMode,
+            uint customSubMode = 0)
         {
             var commandClient = GetCommandClient("[경고] 기체가 연결되지 않아 모드를 변경할 수 없습니다.");
             if (commandClient == null) return;
 
             try
             {
+                uint customMode =
+                    (customMainMode << 16) |
+                    (customSubMode << 24);
+
                 await commandClient.SendCommandLong(
                     MavCmd.MavCmdDoSetMode,
-                    (float)baseMode,
-                    customMainMode,   // param2: PX4 main mode
-                    customSubMode,    // param3: PX4 sub mode
+                    (float)baseMode,   // param1: base mode
+                    customMode,        // param2: PX4 packed custom mode
+                    0f,
                     0f,
                     0f,
                     0f,
@@ -55,7 +59,7 @@ namespace GCS_Project.Services
 
                 OnLogReceived?.Invoke(
                     $"[명령] 비행 모드 변경 요청 전송 " +
-                    $"(baseMode={baseMode}, main={customMainMode}, sub={customSubMode})"
+                    $"(main={customMainMode}, sub={customSubMode}, customMode={customMode})"
                 );
             }
             catch (Exception ex)
