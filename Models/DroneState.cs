@@ -26,7 +26,7 @@ namespace GCS_Project.Models
         private double _roll;
         private double _pitch;
         private double _yaw;
-        private double _targetAltitude = 5.0;
+        private double _targetAltitude = 20.0;
         private double _targetSpeed = 2.0;
 
         // 2. 속성 선언 (SetProperty 방식 적용)
