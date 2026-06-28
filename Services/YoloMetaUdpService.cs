@@ -220,6 +220,17 @@ namespace GCS_Project.Services
             return list;
         }
 
+        // 선택 취소 Ubuntu ROS2 쪽으로 전송한다.
+        public void SendClearTargetId()
+        {
+            var msg = new
+            {
+                type = "clear_target",
+            };
+
+            SendCommandJson(msg);
+        }
+
         // 선택된 타겟 타입을 Ubuntu ROS2 쪽으로 전송한다.
         public void SendTargetId(int targetId)
         {
@@ -232,17 +243,6 @@ namespace GCS_Project.Services
             SendCommandJson(msg);
         }
 
-        // 선택 취소 Ubuntu ROS2 쪽으로 전송한다.
-        public void SendClearTargetId()
-        {
-            var msg = new
-            {
-                type = "clear_target",
-            };
-
-            SendCommandJson(msg);
-        }
-
         // 360도 스캔 시작 명령을 Ubuntu ROS2 쪽으로 전송한다.
         public void SendStartScan()
         {
@@ -250,18 +250,6 @@ namespace GCS_Project.Services
             {
                 type = "start_scan",
                 value = true
-            };
-
-            SendCommandJson(msg);
-        }
-
-        // 360도 스캔 정지 명령을 Ubuntu ROS2 쪽으로 전송한다.
-        public void SendStopScan()
-        {
-            var msg = new
-            {
-                type = "start_scan",
-                value = false
             };
 
             SendCommandJson(msg);
@@ -282,18 +270,6 @@ namespace GCS_Project.Services
             SendCommandJson(msg);
         }
 
-        // 선택 객체 헤딩 추적 정지 명령
-        public void SendStopTracking()
-        {
-            var msg = new
-            {
-                type = "start_tracking",
-                value = false
-            };
-
-            SendCommandJson(msg);
-        }
-
         // 실제 타격 유도 시작 명령
         public void SendStartStrikeGuidance()
         {
@@ -305,6 +281,31 @@ namespace GCS_Project.Services
             {
                 type = "start_strike_guidance",
                 value = true
+            };
+
+            SendCommandJson(msg);
+        }
+
+        // 360도 스캔 정지 명령을 Ubuntu ROS2 쪽으로 전송한다.
+        public void SendStopScan()
+        {
+            var msg = new
+            {
+                type = "start_scan",
+                value = false
+            };
+
+            SendCommandJson(msg);
+        }
+
+
+        // 선택 객체 헤딩 추적 정지 명령
+        public void SendStopTracking()
+        {
+            var msg = new
+            {
+                type = "start_tracking",
+                value = false
             };
 
             SendCommandJson(msg);
