@@ -64,4 +64,4 @@ dotnet build GCS_Project.csproj
 
 ## 트러블슈팅
 
-개발 중 겪었던 주요 문제(GPS 좌표 변환, 텔레메트리 지연, 영상 오버레이 렉, WPF Airspace 문제, 연결 끊김 오탐 등)와 해결 과정은 [Troubleshooting.md](./Troubleshooting.md)에 정리했습니다.
+개발 중 겪었던 주요 문제(수동 조종 종료 후 RTL 오작동, 연결 끊김 후 미재연결, 텔레메트리 UI 성능 저하, 영상·YOLO 시간 동기화 등)와 해결 과정은 [Troubleshooting.md](./Troubleshooting.md)에 정리했습니다.
