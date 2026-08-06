@@ -1,4 +1,4 @@
-# GCS Dashboard
+<img width="1200" height="900" alt="image" src="https://github.com/user-attachments/assets/fa4eaa53-df9c-4ebc-82a5-2259182f41eb" /># GCS Dashboard
 
 PX4 기반 드론을 위한 Windows용 지상 관제 시스템(GCS, Ground Control Station)입니다. WPF로 제작되었으며, 드론의 실시간 비행 제어, 영상 스트리밍 기반 객체 탐지, 지상 컴패니언 컴퓨터(Ubuntu/ROS2) 연동을 하나의 대시보드에서 처리합니다.
 
@@ -25,6 +25,8 @@ PX4 기반 드론을 위한 Windows용 지상 관제 시스템(GCS, Ground Contr
 ## 아키텍처
 
 ```
+<img width="1200" height="900" alt="image" src="https://github.com/user-attachments/assets/de37102b-9f58-4c56-a7e1-0a6cc238ac4c" />
+
 ┌───────────────────┐        MAVLink (UDP)        ┌──────────────┐
 │   GCS Dashboard    │ ───────────────────────────▶│  PX4 (드론)  │
 │   (Windows, WPF)   │◀─────────────────────────── │              │
