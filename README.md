@@ -23,7 +23,9 @@ PX4 기반 드론을 위한 Windows용 지상 관제 시스템(GCS, Ground Contr
 ## 아키텍처
 
 ```
-<img width="1200" height="900" alt="image" src="https://github.com/user-attachments/assets/de37102b-9f58-4c56-a7e1-0a6cc238ac4c" />
+<img width="791" height="545" alt="image" src="https://github.com/user-attachments/assets/f9e50746-1657-4171-a936-f541fd566fa0" />
+<img width="791" height="545" alt="image" src="https://github.com/user-attachments/assets/0a0eb2f2-f007-41c6-a8bc-3c164b0e0cd3" />
+
 
 ┌───────────────────┐        MAVLink (UDP)        ┌──────────────┐
 │   GCS Dashboard    │ ───────────────────────────▶│  PX4 (드론)  │
