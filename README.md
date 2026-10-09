@@ -1,5 +1,8 @@
 PX4 기반 드론을 위한 Windows용 지상 관제 시스템(GCS, Ground Control Station)입니다. WPF로 제작되었으며, 드론의 실시간 비행 제어, 영상 스트리밍 기반 객체 탐지, 지상 컴패니언 컴퓨터(Ubuntu/ROS2) 연동을 하나의 대시보드에서 처리합니다.
 
+## 시연 영상
+https://www.youtube.com/watch?v=hEdssSN2WjU
+
 ## 주요 기능
 
 - **비행 제어**: Arm/Disarm, Takeoff, Landing, RTL(귀환), 미션 시작/중단, 고도·속도 조절
