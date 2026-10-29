@@ -1,4 +1,4 @@
-PX4 기반 드론을 위한 Windows용 지상 관제 시스템(GCS, Ground Control Station)입니다. WPF로 제작되었으며, 드론의 실시간 비행 제어, 영상 스트리밍 기반 객체 탐지, 지상 컴패니언 컴퓨터(Ubuntu/ROS2) 연동을 하나의 대시보드에서 처리합니다.
+<img width="1281" height="1227" alt="image" src="https://github.com/user-attachments/assets/ac465029-5423-4ff9-aac4-58194207dd17" /><img width="1281" height="1227" alt="image" src="https://github.com/user-attachments/assets/47fccfa8-24c6-4651-9057-ca2353cc38ce" />PX4 기반 드론을 위한 Windows용 지상 관제 시스템(GCS, Ground Control Station)입니다. WPF로 제작되었으며, 드론의 실시간 비행 제어, 영상 스트리밍 기반 객체 탐지, 지상 컴패니언 컴퓨터(Ubuntu/ROS2) 연동을 하나의 대시보드에서 처리합니다.
 
 ## 시연 영상
 https://www.youtube.com/watch?v=hEdssSN2WjU
@@ -24,7 +24,7 @@ https://www.youtube.com/watch?v=hEdssSN2WjU
 | 데이터 저장 | EF Core + SQLite |
 
 ## 아키텍처
-<img width="791" height="545" alt="image" src="https://github.com/user-attachments/assets/f9e50746-1657-4171-a936-f541fd566fa0" />
+<img width="1281" height="1227" alt="image" src="https://github.com/user-attachments/assets/c6b4f848-42c0-4a2b-adde-e85bfb2fae28" />
 
 ```
 ┌───────────────────┐        MAVLink (UDP)        ┌──────────────┐
@@ -44,12 +44,12 @@ https://www.youtube.com/watch?v=hEdssSN2WjU
 ```
 GCS_Project/
 ├─ Views/                 # XAML 화면 및 MainWindow partial 클래스
-├─ ViewModels/             # MVVM ViewModel (기능별 partial 클래스로 분리)
-├─ Services/               # MavlinkService, MapController, YOLO/SSH 연동 서비스
-├─ Models/                 # DroneState, DetectedTarget 등 도메인 모델
-├─ Data/                   # EF Core DbContext, 로그 테이블 정의
-├─ Migrations/             # EF Core 마이그레이션
-└─ map.html                # 지도 표시 및 드론/타겟 마커, 경로 렌더링(JS)
+├─ ViewModels/            # MVVM ViewModel 및 화면 명령·이벤트 처리
+├─ Services/              # MAVLink 통신, YOLO 수신, ROS2 명령 송신, Map Controller
+├─ Models/                # DroneState, DetectedTarget 등 도메인 모델
+├─ Data/                  # EF Core DbContext 및 로그 엔티티
+├─ Migrations/            # EF Core 마이그레이션
+└─ map.html               # 지도·드론/타겟 마커 및 이동 경로 렌더링
 ```
 
 ## 실행 방법
