@@ -214,14 +214,14 @@ namespace GCS_Project.ViewModels
             var targetToStrike = SelectedTarget;
 
             // 선택 타겟 ID를 ROS2 쪽으로 전송
-            _yoloMetaUdpService.SendTargetId(targetToStrike.ID);
+            _ros2CommandUdpService.SendTargetId(targetToStrike.ID);
             AppendLog($"[GCS-CMD] 선택 타겟 ID 전송: {targetToStrike.ID}");
 
             // 타격 대상으로 선택된 타겟을 DB에 기록
             SaveTargetLogAsync(targetToStrike, isStriked: true);
 
             // 실제 타격 유도 시작 명령 전송
-            _yoloMetaUdpService.SendStartStrikeGuidance();
+            _ros2CommandUdpService.SendStartStrikeGuidance();
             AppendLog("[GCS-CMD] 타격 Guidance 시작 명령 전송");
 
             AppendLog($"[작전] 타겟(ID:{targetToStrike.ID})으로 타격 가이던스를 시작합니다.");
@@ -235,7 +235,7 @@ namespace GCS_Project.ViewModels
             if (!IsStriking) return;
 
             // Guidance 중지 명령 전송
-            _yoloMetaUdpService.SendStopStrikeGuidance();
+            _ros2CommandUdpService.SendStopStrikeGuidance();
             AppendLog("[GCS-CMD] Guidance 중지 명령 전송");
 
             IsStriking = false;
@@ -353,7 +353,7 @@ namespace GCS_Project.ViewModels
                     return;
                 }
 
-                _yoloMetaUdpService.SendStopScan();
+                _ros2CommandUdpService.SendStopScan();
 
                 _isScanning = false;
 
@@ -385,7 +385,7 @@ namespace GCS_Project.ViewModels
 
                 _isScanning = true;
 
-                _yoloMetaUdpService.SendStartScan();
+                _ros2CommandUdpService.SendStartScan();
 
                 AppendLog("[GCS-CMD] 360도 스캔 시작 명령 전송");
                 AppendLog("[시스템] ROS2 scan_node에 360도 스캔 시작을 요청했습니다.");

@@ -65,7 +65,7 @@ namespace GCS_Project.ViewModels
 
 
         #region [3. 서비스 초기화 및 이벤트 연결]
-        // MAVLink와 YOLO UDP 서비스를 시작하고 이벤트를 ViewModel에 연결한다.
+        // MAVLink와 YOLO UDP 수신 서비스를 시작하고 통신 이벤트를 연결한다.
         private async void InitializeService()
         {
             if (_mavStarting) return;
@@ -73,14 +73,14 @@ namespace GCS_Project.ViewModels
             _mavStarting = true;
 
             SubscribeMavlinkEvents();
-            SubscribeYoloEvents();
+            SubscribeYoloAndRos2CommandEvents();
 
             try
             {
                 await _mavlinkService.StartAsync("0.0.0.0", 14550, "192.168.0.148", 14551);
                 AppendLog("[시스템] MAVLink 연결 성공");
 
-                await _yoloMetaUdpService.StartAsync();
+                await _yoloMetadataUdpReceiver.StartAsync();
                 AppendLog("[시스템] YOLO UDP 메타 수신 시작");
             }
             catch (Exception ex)
@@ -131,10 +131,10 @@ namespace GCS_Project.ViewModels
             };
         }
 
-        // YOLO UDP 서비스에서 수신한 타겟 목록 이벤트를 연결한다.
-        private void SubscribeYoloEvents()
+        // YOLO 수신 이벤트와 ROS2 명령 송신 로그를 연결한다.
+        private void SubscribeYoloAndRos2CommandEvents()
         {
-            _yoloMetaUdpService.OnTargetsReceived += (targets) =>
+            _yoloMetadataUdpReceiver.OnTargetsReceived += (targets) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
@@ -142,7 +142,7 @@ namespace GCS_Project.ViewModels
                 });
             };
 
-            _yoloMetaUdpService.OnLogReceived += (message) =>
+            _yoloMetadataUdpReceiver.OnLogReceived += (message) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
@@ -150,11 +150,19 @@ namespace GCS_Project.ViewModels
                 });
             };
 
-            _yoloMetaUdpService.OnSelectedTargetIdReceived += (selectedTargetId) =>
+            _yoloMetadataUdpReceiver.OnSelectedTargetIdReceived += (selectedTargetId) =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() =>
                 {
                     UpdateSelectedTargetIdFromYolo(selectedTargetId);
+                });
+            };
+
+            _ros2CommandUdpService.OnLogReceived += (message) =>
+            {
+                Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    AppendLog(message);
                 });
             };
         }
@@ -605,8 +613,8 @@ namespace GCS_Project.ViewModels
             try
             {
                 // 수동 조종 진입 전에 ROS2 Offboard 제어 중지
-                _yoloMetaUdpService.SendStopScan();
-                _yoloMetaUdpService.SendStopTracking();
+                _ros2CommandUdpService.SendStopScan();
+                _ros2CommandUdpService.SendStopTracking();
 
                 await Task.Delay(200);
 

@@ -1,4 +1,4 @@
-﻿using GCS_Project.Models;
+using GCS_Project.Models;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -10,15 +10,12 @@ using System.Threading.Tasks;
 
 namespace GCS_Project.Services
 {
-    public class YoloMetaUdpService
+    // YOLO 메타데이터를 UDP로 수신하고 애플리케이션 모델로 변환한다.
+    public class YoloMetadataUdpReceiver
     {
         private readonly int _listenPort;
-        private readonly string _rosCommandIp;
-        private readonly int _rosCommandPort;
 
         private UdpClient? _udpClient;
-        private UdpClient? _commandUdpClient;
-        private IPEndPoint? _rosCommandEndPoint;
         private CancellationTokenSource? _cts;
         private int _lastReceivedSelectedTargetId = -1;
 
@@ -26,54 +23,38 @@ namespace GCS_Project.Services
         public event Action<string>? OnLogReceived;
         public event Action<int>? OnSelectedTargetIdReceived;
 
-        public YoloMetaUdpService(int listenPort, string rosCommandIp, int rosCommandPort)
+        public YoloMetadataUdpReceiver(int listenPort)
         {
             _listenPort = listenPort;
-            _rosCommandIp = rosCommandIp;
-            _rosCommandPort = rosCommandPort;
         }
 
-        // YOLO 메타데이터 수신과 ROS2 명령 송신 준비를 시작한다.
+        // YOLO 메타데이터 수신을 시작한다.
         public Task StartAsync()
         {
             if (_cts != null || _udpClient != null)
                 return Task.CompletedTask;
 
             _cts = new CancellationTokenSource();
-
-            // YOLO 메타데이터 수신용 UDP
             _udpClient = new UdpClient(new IPEndPoint(IPAddress.Any, _listenPort));
 
-            // Ubuntu ROS2 명령 송신용 UDP
-            _commandUdpClient = new UdpClient();
-            _rosCommandEndPoint = new IPEndPoint(
-                IPAddress.Parse(_rosCommandIp),
-                _rosCommandPort
-            );
-
             OnLogReceived?.Invoke($"[YOLO-UDP] 메타 수신 시작: 0.0.0.0:{_listenPort}");
-            OnLogReceived?.Invoke($"[GCS-CMD] ROS2 명령 송신 대상: {_rosCommandIp}:{_rosCommandPort}");
 
             _ = Task.Run(() => ReceiveLoopAsync(_cts.Token));
 
             return Task.CompletedTask;
         }
 
-        // UDP 수신/송신 리소스를 정리한다.
+        // UDP 수신 리소스를 정리한다.
         public Task StopAsync()
         {
-            if (_cts == null && _udpClient == null && _commandUdpClient == null)
+            if (_cts == null && _udpClient == null)
                 return Task.CompletedTask;
 
             try
             {
                 _cts?.Cancel();
-
                 _udpClient?.Close();
                 _udpClient?.Dispose();
-
-                _commandUdpClient?.Close();
-                _commandUdpClient?.Dispose();
             }
             catch
             {
@@ -83,10 +64,7 @@ namespace GCS_Project.Services
             {
                 _cts?.Dispose();
                 _cts = null;
-
                 _udpClient = null;
-                _commandUdpClient = null;
-                _rosCommandEndPoint = null;
             }
 
             OnLogReceived?.Invoke("[YOLO-UDP] 메타 수신 중지");
@@ -94,7 +72,6 @@ namespace GCS_Project.Services
             return Task.CompletedTask;
         }
 
-        // YOLO 메타데이터 JSON을 UDP로 수신한다.
         private async Task ReceiveLoopAsync(CancellationToken token)
         {
             if (_udpClient == null) return;
@@ -107,7 +84,6 @@ namespace GCS_Project.Services
                     string json = Encoding.UTF8.GetString(result.Buffer);
 
                     var targets = ParseTargets(json);
-
                     OnTargetsReceived?.Invoke(targets);
                 }
             }
@@ -131,7 +107,6 @@ namespace GCS_Project.Services
             }
         }
 
-        // YOLO JSON 문자열을 DetectedTarget 목록으로 변환한다.
         private List<DetectedTarget> ParseTargets(string json)
         {
             var list = new List<DetectedTarget>();
@@ -141,8 +116,7 @@ namespace GCS_Project.Services
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                // Ubuntu YOLO tracker가 보내는 현재 선택 타겟 ID 피드백 수신
-                // 재탐지로 ID가 바뀐 경우에만 GCS 화면에 알려준다.
+                // Ubuntu YOLO tracker에서 재탐지로 변경된 선택 타겟 ID를 받는다.
                 if (root.TryGetProperty("selected_target_id", out JsonElement selectedIdElement))
                 {
                     int selectedTargetId = selectedIdElement.GetInt32();
@@ -218,137 +192,6 @@ namespace GCS_Project.Services
             }
 
             return list;
-        }
-
-        // 선택 취소 Ubuntu ROS2 쪽으로 전송한다.
-        public void SendClearTargetId()
-        {
-            var msg = new
-            {
-                type = "clear_target",
-            };
-
-            SendCommandJson(msg);
-        }
-
-        // 선택된 타겟 타입을 Ubuntu ROS2 쪽으로 전송한다.
-        public void SendTargetId(int targetId)
-        {
-            var msg = new
-            {
-                type = "select_target",
-                id = targetId
-            };
-
-            SendCommandJson(msg);
-        }
-
-        // 360도 스캔 시작 명령을 Ubuntu ROS2 쪽으로 전송한다.
-        public void SendStartScan()
-        {
-            var msg = new
-            {
-                type = "start_scan",
-                value = true
-            };
-
-            SendCommandJson(msg);
-        }
-
-        // 선택 객체를 화면 중앙에 유지하기 위한 헤딩 추적 시작 명령
-        public void SendStartTracking()
-        {
-            // 추적 시작 전에 360 scan 정지
-            SendStopScan();
-
-            var msg = new
-            {
-                type = "start_tracking",
-                value = true
-            };
-
-            SendCommandJson(msg);
-        }
-
-        // 실제 타격 유도 시작 명령
-        public void SendStartStrikeGuidance()
-        {
-            // 타격 시작 전에 scan/tracking 정지
-            SendStopScan();
-            SendStopTracking();
-
-            var msg = new
-            {
-                type = "start_strike_guidance",
-                value = true
-            };
-
-            SendCommandJson(msg);
-        }
-
-        // 360도 스캔 정지 명령을 Ubuntu ROS2 쪽으로 전송한다.
-        public void SendStopScan()
-        {
-            var msg = new
-            {
-                type = "start_scan",
-                value = false
-            };
-
-            SendCommandJson(msg);
-        }
-
-
-        // 선택 객체 헤딩 추적 정지 명령
-        public void SendStopTracking()
-        {
-            var msg = new
-            {
-                type = "start_tracking",
-                value = false
-            };
-
-            SendCommandJson(msg);
-        }
-
-        // 실제 타격 유도 중지 명령
-        public void SendStopStrikeGuidance()
-        {
-            var msg = new
-            {
-                type = "start_strike_guidance",
-                value = false
-            };
-
-            SendCommandJson(msg);
-        }
-
-
-        // JSON 명령을 UDP로 Ubuntu에 전송한다.
-        private void SendCommandJson(object msg)
-        {
-            try
-            {
-                if (_commandUdpClient == null || _rosCommandEndPoint == null)
-                {
-                    _commandUdpClient = new UdpClient();
-                    _rosCommandEndPoint = new IPEndPoint(
-                        IPAddress.Parse(_rosCommandIp),
-                        _rosCommandPort
-                    );
-                }
-
-                string json = JsonSerializer.Serialize(msg);
-                byte[] data = Encoding.UTF8.GetBytes(json);
-
-                _commandUdpClient.Send(data, data.Length, _rosCommandEndPoint);
-
-                OnLogReceived?.Invoke($"[GCS-CMD] 송신: {json}");
-            }
-            catch (Exception ex)
-            {
-                OnLogReceived?.Invoke($"[GCS-CMD][오류] 송신 실패: {ex.Message}");
-            }
         }
     }
 }

@@ -25,7 +25,8 @@ namespace GCS_Project.ViewModels
 
         #region [2. 서비스 및 상태 객체]
         private readonly MavlinkService _mavlinkService;
-        private readonly YoloMetaUdpService _yoloMetaUdpService;
+        private readonly YoloMetadataUdpReceiver _yoloMetadataUdpReceiver;
+        private readonly Ros2CommandUdpService _ros2CommandUdpService;
 
         private readonly DroneState _uiDrone = new DroneState();
         private readonly ObservableCollection<DetectedTarget> _detectedTargets = new();
@@ -151,12 +152,12 @@ namespace GCS_Project.ViewModels
                     if (value != null)
                     {
                         // 선택한 객체 TYPE 전송
-                        _yoloMetaUdpService.SendTargetId(value.ID);
+                        _ros2CommandUdpService.SendTargetId(value.ID);
                         AppendLog($"[TRACKING] 선택 타겟 ID 전송: {value.ID}");
 
                         if (FlightMode != MODE_MANUAL)
                         {
-                            _yoloMetaUdpService.SendStartTracking();
+                            _ros2CommandUdpService.SendStartTracking();
                             AppendLog("[TRACKING] 선택 타겟 헤딩 추적 시작 명령 전송");
                         }
                         else
@@ -167,11 +168,11 @@ namespace GCS_Project.ViewModels
                     else
                     {
                         // 선택 해제 시 ROS2에도 선택 없음 상태를 알림
-                        _yoloMetaUdpService.SendClearTargetId();
+                        _ros2CommandUdpService.SendClearTargetId();
                         AppendLog("선택 타겟 해제");
 
                         // 선택 타켓 해제 시 추적 정지 명령
-                        _yoloMetaUdpService.SendStopTracking();
+                        _ros2CommandUdpService.SendStopTracking();
                         AppendLog("[TRACKING] 선택 타겟 해제 - 헤딩 추적 정지 명령 전송");
                     }
                 }
@@ -336,10 +337,13 @@ namespace GCS_Project.ViewModels
         public ViewModel()
         {
             _mavlinkService = new MavlinkService();
-            _yoloMetaUdpService = new YoloMetaUdpService(
-                listenPort: 5001,
-                rosCommandIp: "192.168.0.61",
-                rosCommandPort: 5006
+            _yoloMetadataUdpReceiver = new YoloMetadataUdpReceiver(
+                listenPort: 5001
+            );
+
+            _ros2CommandUdpService = new Ros2CommandUdpService(
+                commandIp: "192.168.0.61",
+                commandPort: 5006
             );
 
             _ubuntuCommandService = new UbuntuCommandService(
@@ -541,7 +545,8 @@ namespace GCS_Project.ViewModels
             _clockTimer = null;
 
             _ = _mavlinkService?.StopAsync();
-            _ = _yoloMetaUdpService?.StopAsync();
+            _ = _yoloMetadataUdpReceiver?.StopAsync();
+            _ros2CommandUdpService?.Dispose();
         }
         #endregion
     }
