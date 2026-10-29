@@ -25,7 +25,8 @@ https://www.youtube.com/watch?v=hEdssSN2WjU
 | 데이터 저장 | EF Core + SQLite |
 
 ## 아키텍처
-<img width="687" height="654" alt="image" src="https://github.com/user-attachments/assets/1219748e-300d-4599-936a-009eb9edfecd" />
+<img width="689" height="658" alt="image" src="https://github.com/user-attachments/assets/2234e708-b79e-42a4-b45b-16c8fdef648d" />
+
 
 
 
