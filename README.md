@@ -27,18 +27,6 @@ https://www.youtube.com/watch?v=hEdssSN2WjU
 ## 아키텍처
 <img width="1281" height="1227" alt="image" src="https://github.com/user-attachments/assets/c6b4f848-42c0-4a2b-adde-e85bfb2fae28" />
 
-```
-┌───────────────────┐        MAVLink (UDP)        ┌──────────────┐
-│   GCS Dashboard    │ ───────────────────────────▶│  PX4 (드론)  │
-│   (Windows, WPF)   │◀─────────────────────────── │              │
-└─────────┬──────────┘        Telemetry            └──────────────┘
-          │  UDP (YOLO 메타데이터 / ROS2 명령)
-          ▼
-┌───────────────────────────┐
-│ Ubuntu 컴패니언 컴퓨터     │
-│ (ROS2, MAVLink 브릿지)    │
-└───────────────────────────┘
-```
 
 ## 프로젝트 구조
 
